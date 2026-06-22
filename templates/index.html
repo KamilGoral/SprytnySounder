@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Przyciski dźwiękowe</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f4f4f4;
+        }
+
+        .button-container {
+            display: flex;
+            flex-wrap: wrap;
+            width: 100%;
+            height: 100%;
+            gap: 10px;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        .button {
+            flex: 1 1 calc(25% - 10px); /* 4 przyciski na wiersz na większych ekranach */
+            display: flex;
+            align-items: center;
+            background-color: #4CAF50; /* Zachowaj kolor */
+            color: white;
+            border: none;
+            padding: 15px;
+            font-size: 24px;
+            cursor: pointer;
+            border-radius: 5px;
+            text-align: left;
+            transition: background-color 0.3s ease;
+        }
+
+        .button:hover {
+            background-color: #0056b3; /* Zachowaj kolor hover */
+        }
+
+        .button.disabled {
+            background-color: #ccc; /* Wyszarzenie przycisku */
+            cursor: not-allowed; /* Zmiana kursora na "not-allowed" */
+        }
+
+        .button.disabled:hover {
+            background-color: #ccc; /* Brak zmiany koloru przy hover */
+        }
+
+        .button .icon {
+            margin: 3rem; /* Zwiększony margines między ikoną a tekstem */
+            font-size: 48px;
+            flex-shrink: 0; /* Zapobiega zmniejszaniu ikony */
+        }
+
+        .button .text {
+            flex-grow: 1;
+            font-size: 1em; /* Domyślny rozmiar tekstu */
+            line-height: 1.2;
+            overflow: hidden; /* Zapobiega wychodzeniu tekstu poza przycisk */
+            text-overflow: ellipsis; /* Dodaje "..." jeśli tekst jest za długi */
+            white-space: normal; /* Pozwala na zawijanie tekstu */
+        }
+
+        /* Responsywność */
+        @media (max-width: 1024px) {
+            .button {
+                flex: 1 1 calc(33.333% - 10px); /* 3 przyciski na wiersz na tabletach */
+            }
+        }
+
+        @media (max-width: 768px) {
+            .button {
+                flex: 1 1 calc(50% - 10px); /* 2 przyciski na wiersz na mniejszych tabletach */
+            }
+        }
+
+        @media (max-width: 480px) {
+            .button {
+                flex: 1 1 100%; /* 1 przycisk na wiersz na telefonach */
+            }
+            .button .text {
+                font-size: 0.9em; /* Mniejszy tekst na telefonach */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="button-container">
+        <button class="button" onclick="playSound('new-pos.mp3')">
+            <i class="fas fa-cash-register icon"></i>
+            <span class="text">Nowa kasa</span>
+        </button>
+        <button class="button" onclick="playSound('help-sco.mp3')">
+            <i class="fas fa-shopping-cart icon"></i>
+            <span class="text">Samoobsługowe - Pomoc</span>
+        </button>
+        <button class="button" onclick="playSound('korzystaniesco.mp3')">
+            <i class="fas fa-hand-pointer icon"></i>
+            <span class="text">Samoobsługowe - Promocja</span>
+        </button>
+        <button class="button" onclick="playSound('help-gas.mp3')">
+            <i class="fas fa-fire icon"></i>
+            <span class="text">Butla gazowa</span>
+        </button>
+        <button class="button" onclick="playSound('new-delivery.mp3')">
+            <i class="fas fa-box icon"></i>
+            <span class="text">Dostawa</span>
+        </button>
+        <button class="button" onclick="playSound('donuts.mp3')">
+            <i class="fas fa-birthday-cake icon"></i>
+            <span class="text">Cukiernica</span>
+        </button>
+        <button class="button" onclick="playSound('call-office.mp3')">
+            <i class="fas fa-user-tie icon"></i>
+            <span class="text">Kierownik zmiany</span>
+        </button>
+        <button class="button" onclick="playSound('Dobregodnia.mp3')">
+            <i class="fas fa-smile icon"></i>
+            <span class="text">Dobrego dnia</span>
+        </button>
+        <button class="button" onclick="playSound('thief.mp3')">
+            <i class="fas fa-user-secret icon"></i>
+            <span class="text">Złodziej</span>
+        </button>
+        <button class="button" onclick="playSound('meat-office.mp3')">
+            <i class="fas fa-drumstick-bite icon"></i>
+            <span class="text">Kierownik mięsny</span>
+        </button>
+        <button class="button" onclick="playSound('recyklomat-oproznij.mp3')">
+            <i class="fas fa-recycle icon"></i>
+            <span class="text">Recyklomat — opróżnij</span>
+        </button>
+        <button class="button" onclick="playSound('recyklomat-pomoc.mp3')">
+            <i class="fas fa-circle-question icon"></i>
+            <span class="text">Recyklomat — pomoc</span>
+        </button>
+    </div>
+
+    <script>
+        let buttonsDisabled = false; // Flaga do sprawdzania, czy przyciski są zablokowane
+
+        async function playSound(filename) {
+            if (buttonsDisabled) return; // Zatrzymaj, jeśli przyciski są zablokowane
+
+            buttonsDisabled = true; // Zablokuj przyciski
+            disableButtons(true); // Zablokuj przyciski wizualnie
+
+            try {
+                const response = await fetch('http://192.168.133.101:8989/play-defined-sound', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ filename: filename })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    if (response.status === 423) {
+                        alert('🔇 System wyciszony: ' + errorData.error);
+                    } else {
+                        alert('Błąd: ' + errorData.error);
+                    }
+                } else {
+                    const data = await response.json();
+                    console.log('Dźwięk odtworzony:', data.played_file);
+                }
+            } catch (error) {
+                console.error('Błąd:', error);
+                alert('Wystąpił błąd połączenia ze serwerem.');
+            }
+
+            setTimeout(() => {
+                buttonsDisabled = false; // Odblokuj przyciski po 5 sekundach
+                disableButtons(false); // Przywróć przyciski do stanu aktywnego
+            }, 5000);
+        }
+
+        function disableButtons(disable) {
+            const buttons = document.querySelectorAll('.button');
+            buttons.forEach(button => {
+                if (disable) {
+                    button.classList.add('disabled');
+                    button.disabled = true; // Blokuje kliknięcie
+                } else {
+                    button.classList.remove('disabled');
+                    button.disabled = false; // Przywraca możliwość kliknięcia
+                }
+            });
+        }
+    </script>
+</body>
+</html>

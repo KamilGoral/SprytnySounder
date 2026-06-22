@@ -1,0 +1,9 @@
+flask
+flask-cors
+pygame
+psutil
+pycaw
+comtypes
+pywin32
+flask-limiter
+requests

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+*.egg-info/
+dist/
+build/
+*.spec
+
+# IDE
+.idea/
+*.iml
+
+# Logs & stats
+log.txt
+statystyka.txt
+temp_sound_file.mp3
+
+# Environment
+.env
+*.env.local
+
+# OS
+Thumbs.db
+.DS_Store

@@ -15,7 +15,7 @@ from elevenlabs.client import ElevenLabs
 from elevenlabs import VoiceSettings
 
 API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
-VOICE_ID = os.getenv("VOICE_ID", "nPczCjzI2devNBz1zQrb")  # <- ZMIEŃ na swój głos
+VOICE_ID = os.getenv("VOICE_ID", "xQrPQOj94zgi24D2y1D1")  # Ryszard B (ten sam co w demo SK)
 OUTPUT_DIR = "static/sounds"
 
 MESSAGES = {

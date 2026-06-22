@@ -16,7 +16,7 @@ $REPO_URL = "https://github.com/KamilGoral/SprytnySounder"
 $ZIP_URL = "$REPO_URL/archive/refs/heads/main.zip"
 
 # Wymus TLS 1.2 (potrzebne na starszych Windows w sklepach)
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+[Net.ServicePointManager]::SecurityProtocol = 3072 -bor 768 -bor 192
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "   SprytnySounder - Aktualizator v1.2" -ForegroundColor Cyan

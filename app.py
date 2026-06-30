@@ -234,64 +234,59 @@ def play_sound_with_isolation(sound_path, force=False):
 
 # === AUTO-UPDATER ===
 
-def check_for_updates():
-    """
-    Sprawdza czy dostêpna jest nowsza wersja.
-    Dzia³a na dwa sposoby:
-    1. Jeśli git dostêpny — wykonuje git pull
-    2. Jeśli nie — sprawdza wersjê przez HTTP
-    """
-    if not UPDATE_ENABLED or not UPDATE_URL:
-        return {"status": "disabled", "message": "Auto-update wy³¹czony lub brak URL"}
-
+def _read_version_file():
+    """Czyta zainstalowan¹ wersjê z version.txt (autorytatywne)."""
     try:
-        # Próbuj przez git
-        if os.path.exists(os.path.join(BASE_PATH, ".git")):
-            result = subprocess.run(
-                ["git", "pull"],
-                cwd=BASE_PATH,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            if result.returncode == 0:
-                if "Already up to date" in result.stdout:
-                    return {"status": "ok", "message": "Ju¿ aktualne"}
-                else:
-                    return {"status": "updated", "message": "Zaktualizowano!", "detail": result.stdout}
-            else:
-                return {"status": "error", "message": f"Git error: {result.stderr}"}
+        with open(os.path.join(BASE_PATH, "version.txt"), "r", encoding="utf-8") as f:
+            v = f.read().strip()
+            if v:
+                return v
+    except Exception:
+        pass
+    return VERSION
 
-        # Fallback: HTTP version check z GitHub releases
-        try:
-            # Próba pobrania pliku wersji z repozytorium
-            version_url = UPDATE_URL.rstrip("/") + "/raw/main/version.txt"
-            resp = requests.get(version_url, timeout=5)
-            if resp.status_code == 200:
-                remote_version = resp.text.strip()
-                if remote_version != VERSION:
-                    return {"status": "available", "message": f"Dostêpna wersja {remote_version}"}
-                return {"status": "ok", "message": "Ju¿ aktualne"}
-        except Exception:
-            pass
 
-        return {"status": "unknown", "message": "Nie mo¿na sprawdziæ"}
-
+def run_update_now():
+    """
+    Uruchamia update.py (--no-restart), który robi git pull albo pobiera ZIP —
+    dzia³a tak samo na sklepach git i ZIP. Zwraca (changed, before, after).
+    Pobieranie jest scentralizowane w update.py (jedno Ÿród³o prawdy).
+    """
+    before = _read_version_file()
+    updater = os.path.join(BASE_PATH, "update.py")
+    if not os.path.exists(updater):
+        return (False, before, before)
+    try:
+        # Wymuœ UTF-8 w podprocesie, ¿eby emoji w update.py nie wywali³y siê na cp1250
+        env = dict(os.environ)
+        env["PYTHONUTF8"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
+        result = subprocess.run(
+            [sys.executable, updater, "--no-restart"],
+            cwd=BASE_PATH, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=180, env=env
+        )
+        if result.stdout:
+            print("[Update] " + result.stdout.strip().replace("\n", "\n[Update] "))
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        print(f"[Update] B³¹d uruchomienia update.py: {e}")
+        return (False, before, before)
+    after = _read_version_file()
+    return (after != before, before, after)
 
 
 def auto_update_loop():
-    """Pêtla t³a — sprawdza aktualizacje co UPDATE_INTERVAL godzin."""
-    time.sleep(10)  # Poczekaj a¿ Flask wystartuje
+    """Pêtla t³a — co UPDATE_INTERVAL godzin pobiera i wgrywa zmiany, potem restart."""
+    time.sleep(15)  # Poczekaj a¿ Flask wystartuje
     while True:
         try:
-            result = check_for_updates()
-            print(f"[Auto-Update] {result['status']}: {result['message']}")
-            if result["status"] == "updated":
-                # Restart aplikacji po aktualizacji
-                print("[Auto-Update] Restartujê aplikacjê...")
+            changed, before, after = run_update_now()
+            if changed:
+                # Restart TYLKO po realnej zmianie wersji -> brak pêtli restartów
+                print(f"[Auto-Update] Zaktualizowano {before} -> {after}, restartujê...")
                 os.execl(sys.executable, sys.executable, *sys.argv)
+            else:
+                print(f"[Auto-Update] Aktualne ({after})")
         except Exception as e:
             print(f"[Auto-Update] B³¹d: {e}")
 
@@ -502,9 +497,20 @@ def api_config():
 
 @app.route('/api/check-update', methods=['POST'])
 def api_check_update():
-    """Rêczne wywo³anie sprawdzenia aktualizacji."""
-    result = check_for_updates()
-    return jsonify(result)
+    """Rêczne sprawdzenie + pobranie aktualizacji (z panelu /admin)."""
+    if not UPDATE_ENABLED or not UPDATE_URL:
+        return jsonify({"status": "disabled", "message": "Auto-update wy³¹czony lub brak URL"})
+
+    changed, before, after = run_update_now()
+    if changed:
+        # Restart po krótkiej chwili, ¿eby zd¹¿yæ odes³aæ odpowiedŸ do panelu
+        def _restart():
+            time.sleep(2)
+            os.execl(sys.executable, sys.executable, *sys.argv)
+        threading.Thread(target=_restart, daemon=True).start()
+        return jsonify({"status": "updated", "message": f"Zaktualizowano {before} → {after}. Restartujê…"})
+
+    return jsonify({"status": "ok", "message": f"Ju¿ aktualne ({after})"})
 
 
 @app.route('/api/sounds', methods=['GET'])

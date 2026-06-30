@@ -473,6 +473,12 @@ def api_config():
         if "restore_volume" in data:
             RESTORE_VOLUME = _clamp_pct(data["restore_volume"], RESTORE_VOLUME)
             updates["restore_volume"] = RESTORE_VOLUME
+            # Zastosuj OD RAZU — radio/tło (np. Lewiatan) skacze na nowy poziom natychmiast
+            try:
+                own = os.path.basename(sys.executable).lower()
+                set_all_sessions_volume(RESTORE_VOLUME, exclude_names={own})
+            except Exception as e:
+                print(f"⚠️ Nie udało się zastosować głośności tła na żywo: {e}")
 
         if "manual_mute" in data:
             _manual_muted = bool(data["manual_mute"])

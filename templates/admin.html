@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SprytnySounder — Panel administracyjny</title>
+  <style>
+    :root {
+      --green: #16a34a;
+      --green-dark: #15803d;
+      --green-soft: #dcfce7;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --bg: #f1f5f9;
+      --danger: #dc2626;
+      --danger-soft: #fee2e2;
+      --mono: ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+    header {
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
+    .brand h1 { font-size: 25px; margin: 0; font-weight: 800; letter-spacing: -0.02em; }
+    .brand .sub { font-size: 13px; color: var(--muted); }
+    .brand .sub #verLabel { font-family: var(--mono); }
+    .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+    .badge { font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 999px; background: var(--green-soft); color: var(--green-dark); }
+    .badge.off { background: var(--danger-soft); color: var(--danger); }
+    .badge.neutral { background: #e2e8f0; color: #475569; }
+
+    main { max-width: 720px; margin: 0 auto; padding: 24px; }
+    .card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 22px;
+      margin-bottom: 18px;
+    }
+    .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 18px; font-weight: 700; }
+
+    .field { margin-bottom: 22px; }
+    .field:last-child { margin-bottom: 0; }
+    .field .label { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+    .field .label .name { font-weight: 600; }
+    .field .label .val { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 700; color: var(--green-dark); font-size: 18px; }
+    .field .hint { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+
+    input[type=range] { width: 100%; accent-color: var(--green); height: 28px; cursor: pointer; }
+    input[type=text] { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 15px; font-family: inherit; }
+    input[type=text]:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+
+    .toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; }
+    .toggle:not(:last-child) { border-bottom: 1px solid var(--line); }
+    .toggle .t-text .name { font-weight: 600; }
+    .toggle .t-text .hint { font-size: 12.5px; color: var(--muted); }
+    .switch { position: relative; width: 52px; height: 30px; flex: none; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; inset: 0; background: #cbd5e1; border-radius: 999px; transition: .2s; }
+    .slider::before { content: ""; position: absolute; width: 24px; height: 24px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+    .switch input:checked + .slider { background: var(--green); }
+    .switch input:checked + .slider::before { transform: translateX(22px); }
+
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    button {
+      font-family: inherit; font-size: 15px; font-weight: 600; padding: 12px 20px;
+      border-radius: 10px; border: 1px solid transparent; cursor: pointer; transition: .15s;
+    }
+    button:active { transform: translateY(1px); }
+    .btn-primary { background: var(--green); color: #fff; }
+    .btn-primary:hover { background: var(--green-dark); }
+    .btn-ghost { background: #fff; color: var(--ink); border-color: var(--line); }
+    .btn-ghost:hover { border-color: var(--green); color: var(--green-dark); }
+
+    #toast {
+      position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px);
+      background: var(--ink); color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 14px;
+      opacity: 0; pointer-events: none; transition: .25s; max-width: 90vw;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #toast.err { background: var(--danger); }
+    .foot { text-align: center; color: var(--muted); font-size: 12.5px; padding: 8px 0 24px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="dot"></span>
+      <div>
+        <h1 id="storeTitle">SprytnySounder</h1>
+        <div class="sub">Panel administracyjny · <span id="verLabel">—</span></div>
+      </div>
+    </div>
+    <div class="badges" id="badges"></div>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>Głośność</h2>
+
+      <div class="field">
+        <div class="label"><span class="name">Głośność komunikatu</span><span class="val"><span id="annV">100</span>%</span></div>
+        <input type="range" id="ann" min="0" max="100" value="100">
+        <div class="hint">Jak głośno odtwarzany jest sam komunikat na sali.</div>
+      </div>
+
+      <div class="field">
+        <div class="label"><span class="name">Tło podczas komunikatu</span><span class="val"><span id="duckV">5</span>%</span></div>
+        <input type="range" id="duck" min="0" max="100" value="5">
+        <div class="hint">Do ilu ściszane są inne dźwięki (np. radio) w trakcie komunikatu.</div>
+      </div>
+
+      <div class="field">
+        <div class="label"><span class="name">Tło po komunikacie</span><span class="val"><span id="restV">33</span>%</span></div>
+        <input type="range" id="rest" min="0" max="100" value="33">
+        <div class="hint">Do jakiego poziomu wraca tło, gdy komunikat się skończy.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Tryb pracy</h2>
+      <div class="toggle">
+        <div class="t-text">
+          <div class="name">Ręczne wyciszenie</div>
+          <div class="hint">Wstrzymuje wszystkie komunikaty, dopóki nie wyłączysz.</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="mute"><span class="slider"></span></label>
+      </div>
+      <div class="toggle">
+        <div class="t-text">
+          <div class="name">Odwrócone niedziele</div>
+          <div class="hint">Dla sklepów grających w niedziele niehandlowe (np. Krótka 2a).</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="sunday"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Sklep</h2>
+      <div class="field">
+        <div class="label"><span class="name">Nazwa wyświetlana</span></div>
+        <input type="text" id="store" placeholder="np. Kilińskiego">
+        <div class="hint">Pokazywana w nagłówku paneli.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Akcje</h2>
+      <div class="actions">
+        <button class="btn-primary" id="save">Zapisz ustawienia</button>
+        <button class="btn-ghost" id="test">▶ Testuj dźwięk</button>
+        <button class="btn-ghost" id="update">Sprawdź aktualizację</button>
+      </div>
+      <div class="hint" style="margin-top:14px">Test gra zawsze — nawet przy wyciszeniu i w dni wolne. Zapisz ustawienia, żeby test użył nowej głośności.</div>
+    </div>
+
+    <div class="foot">SprytnySounder · zmiany zapisują się lokalnie na tym sklepie</div>
+  </main>
+
+  <div id="toast"></div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const ann = $('ann'), duck = $('duck'), rest = $('rest');
+    const mute = $('mute'), sunday = $('sunday'), store = $('store');
+
+    function bindRange(input, out) {
+      const o = $(out);
+      input.addEventListener('input', () => { o.textContent = input.value; });
+    }
+    bindRange(ann, 'annV'); bindRange(duck, 'duckV'); bindRange(rest, 'restV');
+
+    let toastTimer;
+    function toast(msg, isErr) {
+      const t = $('toast');
+      t.textContent = msg;
+      t.className = 'show' + (isErr ? ' err' : '');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { t.className = ''; }, 3000);
+    }
+
+    function renderBadges(s) {
+      const b = $('badges');
+      b.innerHTML = '';
+      const add = (text, cls) => { const e = document.createElement('span'); e.className = 'badge ' + (cls||''); e.textContent = text; b.appendChild(e); };
+      if (s.manual_mute) add('Wyciszony ręcznie', 'off');
+      else if (s.muted) add('Wyciszony (dzień wolny)', 'off');
+      else add('Aktywny');
+      if (s.trade_info && s.trade_info.reason) add(s.trade_info.reason, 'neutral');
+    }
+
+    async function load() {
+      try {
+        const r = await fetch('/api/status');
+        const s = await r.json();
+        $('storeTitle').textContent = s.store_name || 'SprytnySounder';
+        $('verLabel').textContent = 'v' + (s.version || '?');
+        ann.value = s.announcement_volume; $('annV').textContent = s.announcement_volume;
+        duck.value = s.duck_volume; $('duckV').textContent = s.duck_volume;
+        rest.value = s.restore_volume; $('restV').textContent = s.restore_volume;
+        mute.checked = !!s.manual_mute;
+        sunday.checked = !!s.sunday_inverted;
+        store.value = s.store_name || '';
+        renderBadges(s);
+      } catch (e) {
+        toast('Nie można pobrać statusu serwera', true);
+      }
+    }
+
+    async function postConfig(payload) {
+      const r = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.error || ('HTTP ' + r.status)); }
+      return r.json();
+    }
+
+    $('save').addEventListener('click', async () => {
+      try {
+        await postConfig({
+          announcement_volume: +ann.value,
+          duck_volume: +duck.value,
+          restore_volume: +rest.value,
+          manual_mute: mute.checked,
+          sunday_inverted: sunday.checked,
+          store_name: store.value.trim()
+        });
+        toast('Zapisano ✓');
+        load();
+      } catch (e) { toast('Błąd zapisu: ' + e.message, true); }
+    });
+
+    // Przełączniki działają od razu (bez czekania na Zapisz)
+    mute.addEventListener('change', async () => {
+      try { await postConfig({ manual_mute: mute.checked }); toast(mute.checked ? 'Wyciszono' : 'Wznowiono'); load(); }
+      catch (e) { toast('Błąd: ' + e.message, true); }
+    });
+
+    $('test').addEventListener('click', async () => {
+      try {
+        const r = await fetch('/api/test-sound', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'błąd');
+        toast('Gram: ' + d.played_file);
+      } catch (e) { toast('Błąd testu: ' + e.message, true); }
+    });
+
+    $('update').addEventListener('click', async () => {
+      toast('Sprawdzam aktualizację…');
+      try {
+        const r = await fetch('/api/check-update', { method: 'POST' });
+        const d = await r.json();
+        toast(d.message || d.status);
+      } catch (e) { toast('Błąd: ' + e.message, true); }
+    });
+
+    load();
+  </script>
+</body>
+</html>

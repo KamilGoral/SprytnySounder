@@ -82,6 +82,11 @@ UPDATE_URL = config.get("update_url", "")
 UPDATE_INTERVAL = config.get("update_check_interval_hours", 24)
 STORE_NAME = config.get("store_name", "SprytnySounder")
 
+# Głośność (sterowane z panelu /admin, zapisywane do lokalnego config.json)
+ANNOUNCEMENT_VOLUME = int(config.get("announcement_volume", 100))  # głośność komunikatu (%)
+DUCK_VOLUME = int(config.get("duck_volume", 5))                    # tło PODCZAS komunikatu (%)
+RESTORE_VOLUME = int(config.get("restore_volume", 33))            # tło PO komunikacie (%)
+
 if getattr(sys, 'frozen', False):
     BASE_PATH = os.path.dirname(sys.executable)
 else:
@@ -99,7 +104,8 @@ pygame.mixer.init()
 pythoncom.CoInitialize()
 
 # === Flagi systemowe ===
-_system_muted = False  # Czy system jest wyciszony (dzieñ wolny od handlu)
+_system_muted = False  # Czy system jest wyciszony automatycznie (dzieñ wolny od handlu)
+_manual_muted = bool(config.get("manual_mute", False))  # Rêczne wyciszenie z panelu /admin
 _last_trade_check = None
 _last_trade_result = None
 
@@ -141,15 +147,18 @@ def set_all_sessions_volume(target_volume, exclude_names=None):
                 continue
 
 
-def play_single_sound(path):
-    """Odtwarza pojedynczy plik dŸwiêkowy przez pygame."""
+def play_single_sound(path, volume=None):
+    """Odtwarza pojedynczy plik dŸwiêkowy przez pygame.
+    volume: 0-100 (%) — domyœlnie ANNOUNCEMENT_VOLUME z konfiguracji."""
     if not os.path.exists(path):
         print(f"⚠️ Plik nie istnieje: {path}")
         return
     if not pygame.mixer.get_init():
         pygame.mixer.init()
+    vol_pct = ANNOUNCEMENT_VOLUME if volume is None else volume
+    vol = max(0.0, min(1.0, vol_pct / 100.0))
     pygame.mixer.music.load(path)
-    pygame.mixer.music.set_volume(1.0)
+    pygame.mixer.music.set_volume(vol)
     pygame.mixer.music.play()
     while pygame.mixer.music.get_busy():
         pygame.time.wait(100)
@@ -182,24 +191,28 @@ def check_trade_day():
     return info
 
 
-def play_sound_with_isolation(sound_path):
+def play_sound_with_isolation(sound_path, force=False):
     """
     Odtwarza dŸwiêk z izolacj¹ g³oœnoœci.
-    Najpierw sprawdza czy dziœ jest dzieñ handlowy.
+    Sprawdza czy wolno graæ (dzieñ handlowy + rêczne wyciszenie),
+    chyba ¿e force=True (test z panelu /admin gra zawsze).
     """
-    # SprawdŸ czy wolno graæ
-    trade_info = check_trade_day()
-    if not trade_info["is_trade_day"]:
-        print(f"⛔ Blokada: {trade_info['reason']} — dŸwiêk nie zostanie odtworzony")
-        return
+    if not force:
+        if _manual_muted:
+            print("⛔ Blokada: rêczne wyciszenie — dŸwiêk nie zostanie odtworzony")
+            return
+        trade_info = check_trade_day()
+        if not trade_info["is_trade_day"]:
+            print(f"⛔ Blokada: {trade_info['reason']} — dŸwiêk nie zostanie odtworzony")
+            return
 
     try:
         pythoncom.CoInitialize()
         own_name = os.path.basename(sys.executable).lower()
         exclude = {own_name}
 
-        # Wycisz resztê systemu do 5%
-        set_all_sessions_volume(5, exclude_names=exclude)
+        # Wycisz resztê systemu na czas komunikatu
+        set_all_sessions_volume(DUCK_VOLUME, exclude_names=exclude)
 
         # Rozgrzewka
         warmup_path = os.path.join(SOUND_DIRECTORY, "ping.mp3")
@@ -210,8 +223,8 @@ def play_sound_with_isolation(sound_path):
         # W³aœciwy komunikat
         play_single_sound(sound_path)
 
-        # Przywróæ do 33%
-        set_all_sessions_volume(33, exclude_names=exclude)
+        # Przywróæ g³oœnoœæ t³a
+        set_all_sessions_volume(RESTORE_VOLUME, exclude_names=exclude)
 
     except Exception as e:
         print(f"❌ B³¹d odtwarzania: {e}")
@@ -292,6 +305,11 @@ def play_sound_route():
     """Endpoint do uploadu i odtwarzania pliku dŸwiêkowego."""
     # SprawdŸ czy wolno graæ
     trade_info = check_trade_day()
+    if _manual_muted:
+        return jsonify({
+            "error": "System wyciszony rêcznie (panel /admin)",
+            "trade_info": trade_info
+        }), 423
     if not trade_info["is_trade_day"]:
         return jsonify({
             "error": f"System wyciszony: {trade_info['reason']}",
@@ -330,6 +348,11 @@ def play_defined_sound():
     """Endpoint do odtwarzania zdefiniowanego dŸwiêku po nazwie pliku."""
     # SprawdŸ czy wolno graæ
     trade_info = check_trade_day()
+    if _manual_muted:
+        return jsonify({
+            "error": "System wyciszony rêcznie (panel /admin)",
+            "trade_info": trade_info
+        }), 423
     if not trade_info["is_trade_day"]:
         return jsonify({
             "error": f"System wyciszony: {trade_info['reason']}",
@@ -389,7 +412,11 @@ def api_status():
         "version": VERSION,
         "store_name": STORE_NAME,
         "muted": _system_muted,
+        "manual_mute": _manual_muted,
         "sunday_inverted": SUNDAY_INVERTED,
+        "announcement_volume": ANNOUNCEMENT_VOLUME,
+        "duck_volume": DUCK_VOLUME,
+        "restore_volume": RESTORE_VOLUME,
         "trade_info": trade_info,
         "update_enabled": UPDATE_ENABLED,
         "stats": stats,
@@ -397,41 +424,71 @@ def api_status():
     })
 
 
+def _clamp_pct(value, fallback):
+    """Przycina wartoœæ do zakresu 0-100 (%)."""
+    try:
+        return max(0, min(100, int(value)))
+    except (TypeError, ValueError):
+        return fallback
+
+
 @app.route('/api/config', methods=['GET', 'POST'])
 def api_config():
-    """Odczytuje lub aktualizuje konfiguracjê."""
-    global SUNDAY_INVERTED, config
+    """Odczytuje lub aktualizuje konfiguracjê (panel /admin).
+    Zapisuje TYLKO zmienione pola do lokalnego config.json — nie zaœmieca go
+    pe³nym mergem, wiêc locations/ pozostaje Ÿród³em prawdy dla reszty."""
+    global SUNDAY_INVERTED, STORE_NAME, config, _last_trade_check
+    global ANNOUNCEMENT_VOLUME, DUCK_VOLUME, RESTORE_VOLUME, _manual_muted
 
     if request.method == 'POST':
         data = request.get_json()
         if data is None:
             return jsonify({"error": "Invalid JSON"}), 400
 
-        # Aktualizuj dozwolone pola
+        updates = {}
+
         if "sunday_inverted" in data:
             SUNDAY_INVERTED = bool(data["sunday_inverted"])
-            config["sunday_inverted"] = SUNDAY_INVERTED
-            # Zresetuj cache dnia
-            global _last_trade_check
-            _last_trade_check = None
+            updates["sunday_inverted"] = SUNDAY_INVERTED
+            _last_trade_check = None  # zresetuj cache dnia
 
         if "store_name" in data:
-            config["store_name"] = str(data["store_name"])
+            STORE_NAME = str(data["store_name"])
+            updates["store_name"] = STORE_NAME
 
         if "update_enabled" in data:
-            config["update_enabled"] = bool(data["update_enabled"])
+            updates["update_enabled"] = bool(data["update_enabled"])
 
         if "update_url" in data:
-            config["update_url"] = str(data["update_url"])
+            updates["update_url"] = str(data["update_url"])
 
-        # Zapisz config
+        if "announcement_volume" in data:
+            ANNOUNCEMENT_VOLUME = _clamp_pct(data["announcement_volume"], ANNOUNCEMENT_VOLUME)
+            updates["announcement_volume"] = ANNOUNCEMENT_VOLUME
+
+        if "duck_volume" in data:
+            DUCK_VOLUME = _clamp_pct(data["duck_volume"], DUCK_VOLUME)
+            updates["duck_volume"] = DUCK_VOLUME
+
+        if "restore_volume" in data:
+            RESTORE_VOLUME = _clamp_pct(data["restore_volume"], RESTORE_VOLUME)
+            updates["restore_volume"] = RESTORE_VOLUME
+
+        if "manual_mute" in data:
+            _manual_muted = bool(data["manual_mute"])
+            updates["manual_mute"] = _manual_muted
+
+        # Zapisz tylko zmienione pola do LOKALNEGO config.json
         try:
+            local = _read_json(CONFIG_FILE)
+            local.update(updates)
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2, ensure_ascii=False)
+                json.dump(local, f, indent=2, ensure_ascii=False)
+            config = load_config()  # odœwie¿ scalon¹ konfiguracjê
         except Exception as e:
             return jsonify({"error": f"Nie mo¿na zapisaæ configu: {e}"}), 500
 
-        return jsonify({"status": "ok", "config": config})
+        return jsonify({"status": "ok", "saved": updates})
 
     # GET
     return jsonify({"config": config})
@@ -461,6 +518,37 @@ def api_list_sounds():
     return jsonify({"sounds": sounds})
 
 
+@app.route('/api/test-sound', methods=['POST'])
+def api_test_sound():
+    """Test odtworzenia z panelu /admin — gra ZAWSZE (pomija wyciszenie i dzieñ
+    wolny), z aktualnymi ustawieniami g³oœnoœci. Do sprawdzania suwaków."""
+    data = request.get_json(silent=True) or {}
+    filename = data.get("filename")
+    sound_dir = os.path.join(BASE_PATH, SOUND_DIRECTORY)
+
+    if not filename:
+        candidates = []
+        if os.path.exists(sound_dir):
+            candidates = [f for f in sorted(os.listdir(sound_dir))
+                          if f.lower().endswith(('.mp3', '.wav')) and f.lower() != 'ping.mp3']
+        if not candidates:
+            return jsonify({"error": "Brak dŸwiêków do testu"}), 404
+        filename = candidates[0]
+
+    file_path = os.path.join(SOUND_DIRECTORY, filename)
+    if not os.path.exists(file_path):
+        return jsonify({"error": "Plik nie istnieje"}), 404
+
+    def play_in_thread():
+        try:
+            play_sound_with_isolation(file_path, force=True)
+        except Exception as e:
+            print(f"Error during test playback: {e}")
+
+    threading.Thread(target=play_in_thread).start()
+    return jsonify({"status": "ok", "played_file": filename})
+
+
 # === STRONY ===
 
 @app.route('/')
@@ -473,13 +561,18 @@ def index_tablet():
     return render_template('index-tablet.html')
 
 
+@app.route('/admin')
+def admin_page():
+    return render_template('admin.html')
+
+
 # === START ===
 
 if __name__ == '__main__':
     try:
         own_name = os.path.basename(sys.executable).lower()
         exclude = {own_name}
-        set_all_sessions_volume(33, exclude_names=exclude)
+        set_all_sessions_volume(RESTORE_VOLUME, exclude_names=exclude)
     except Exception as e:
         print(f"❌ B³¹d przy ustawianiu g³oœnoœci przy starcie: {e}")
 

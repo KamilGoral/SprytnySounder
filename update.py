@@ -28,6 +28,9 @@ import time
 import requests  # pip install requests
 
 CONFIG_FILE = "config.json"
+DEFAULTS_FILE = "config.defaults.json"
+LOCATION_FILE = "location.txt"
+LOCATIONS_DIR = "locations"
 VERSION_FILE = "version.txt"
 
 if getattr(sys, 'frozen', False):
@@ -36,22 +39,41 @@ else:
     BASE_PATH = os.path.abspath(".")
 
 
-def load_config():
-    config_path = os.path.join(BASE_PATH, CONFIG_FILE)
-    if not os.path.exists(config_path):
-        print(f"❌ Brak pliku konfiguracyjnego: {config_path}")
+def _read_json(rel_path):
+    path = os.path.join(BASE_PATH, rel_path)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
         return {}
-    with open(config_path, "r", encoding="utf-8") as f:
-        return json.load(f)
 
 
-def save_config(config):
-    config_path = os.path.join(BASE_PATH, CONFIG_FILE)
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
+def load_config():
+    # Warstwy jak w app.py: defaults (repo) -> locations/<location.txt> (repo) -> config.json (lokalne)
+    cfg = {}
+    cfg.update(_read_json(DEFAULTS_FILE))
+    try:
+        loc_path = os.path.join(BASE_PATH, LOCATION_FILE)
+        if os.path.exists(loc_path):
+            with open(loc_path, "r", encoding="utf-8") as f:
+                loc = f.read().strip()
+            if loc:
+                cfg.update(_read_json(os.path.join(LOCATIONS_DIR, loc + ".json")))
+    except Exception:
+        pass
+    cfg.update(_read_json(CONFIG_FILE))
+    return cfg
 
 
 def get_local_version(config):
+    # version.txt jest autorytatywne (aktualizacja je nadpisuje); config jako fallback
+    try:
+        with open(os.path.join(BASE_PATH, VERSION_FILE), "r", encoding="utf-8") as f:
+            v = f.read().strip()
+            if v:
+                return v
+    except Exception:
+        pass
     return config.get("version", "0.0.0")
 
 
@@ -118,10 +140,7 @@ def download_and_update(config, force=False):
             )
             if result.returncode == 0:
                 print(f"✅ Git pull: {result.stdout.strip()}")
-                # Update version w config.json
-                if remote_version:
-                    config["version"] = remote_version
-                    save_config(config)
+                # Wersja jest w version.txt (zaktualizowana przez pull) - nic nie zapisujemy
                 return True
             else:
                 print(f"⚠️ Git pull failed: {result.stderr}")
@@ -181,12 +200,7 @@ def download_and_update(config, force=False):
                     shutil.copy2(src, dst)
             
             print("✅ Pliki zaktualizowane pomyœlnie")
-            
-            # Update version
-            if remote_version:
-                config["version"] = remote_version
-                save_config(config)
-            
+            # Wersja jest w version.txt (skopiowanym z repo) - nic nie zapisujemy
             return True
 
     except Exception as e:

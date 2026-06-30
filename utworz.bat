@@ -97,39 +97,24 @@ set "IP=%IP: =%"
 if "%IP%"=="" set "IP=127.0.0.1"
 echo   Wykryte IP: %IP%
 
-:: Utworz config.json z wykrytym IP
-powershell -NoProfile -Command "
-$cfg = @{
-    host = '%IP%'
-    port = 8989
-    sound_folder = 'static/sounds'
-    log_file = 'log.txt'
-    stats_file = 'statystyka.txt'
-    template_folder = 'templates'
-    static_folder = 'static'
-    version = '1.1.0'
-    sunday_inverted = $false
-    update_enabled = $true
-    update_url = 'https://github.com/KamilGoral/SprytnySounder'
-    update_check_interval_hours = 24
-    store_name = 'Nowy sklep'
-}
-$cfg | ConvertTo-Json | Set-Content '%INSTALL_DIR%\config.json' -Encoding UTF8
-"
-
+:: Utworz config.json (LOKALNY, per maszyna) - tylko host i port.
+:: Reszta (store_name, sunday_inverted, update_url...) idzie z repo:
+:: config.defaults.json + locations\<lokalizacja>.json
+powershell -NoProfile -Command "@{ host = '%IP%'; port = 8989 } | ConvertTo-Json | Set-Content '%INSTALL_DIR%\config.json' -Encoding UTF8"
 echo   OK - config.json utworzony z IP %IP%:8989
 
-:: Zapytaj o nazwe sklepu
-set /p NAZWA="Podaj nazwe sklepu (np. Lidl Krotka): "
-if not "%NAZWA%"=="" (
-    powershell -NoProfile -Command "(Get-Content '%INSTALL_DIR%\config.json' -Raw | ConvertFrom-Json) | ForEach-Object { \$_.store_name = '%NAZWA%'; \$_- } | ConvertTo-Json | Set-Content '%INSTALL_DIR%\config.json' -Encoding UTF8"
-)
-
-:: Zapytaj o odwrocone niedziele
-set /p NIEDZIELE="Czy to sklep Krotka 2a (odwrocone niedziele)? (t/n): "
-if /i "%NIEDZIELE%"=="t" (
-    powershell -NoProfile -Command "(Get-Content '%INSTALL_DIR%\config.json' -Raw | ConvertFrom-Json) | ForEach-Object { \$_.sunday_inverted = \$true; \$_- } | ConvertTo-Json | Set-Content '%INSTALL_DIR%\config.json' -Encoding UTF8"
-    echo   OK - odwrocone niedziele wlaczone
+:: Zapytaj o KROTKA nazwe lokalizacji -> location.txt (per maszyna, nie w repo)
+echo.
+echo   Podaj KROTKA nazwe lokalizacji - male litery, bez spacji i polskich znakow.
+echo   Przyklady: kilinskiego, bielska, sulkowice, krotka2a
+set /p LOC="   Lokalizacja: "
+if not "%LOC%"=="" (
+    >"%INSTALL_DIR%\location.txt" echo %LOC%
+    echo   OK - location.txt = %LOC%
+    echo   WAZNE: w repo musi istniec plik  locations\%LOC%.json
+    echo          (store_name + sunday_inverted). Patrz locations\README.md
+) else (
+    echo   UWAGA - nie podano lokalizacji. Uzupelnij recznie plik location.txt
 )
 
 :: Dodaj autostart w Windows
@@ -138,8 +123,7 @@ powershell -NoProfile -Command "
 try {
     $wsh = New-Object -ComObject WScript.Shell
     $shortcut = $wsh.CreateShortcut([Environment]::GetFolderPath('Startup') + '\SprytnySounder.lnk')
-    $shortcut.TargetPath = 'cmd.exe'
-    $shortcut.Arguments = '/c cd /d \"%INSTALL_DIR%\" && python app.py'
+    $shortcut.TargetPath = '%INSTALL_DIR%\uruchom.bat'
     $shortcut.WorkingDirectory = '%INSTALL_DIR%'
     $shortcut.WindowStyle = 7
     $shortcut.Save()
@@ -161,7 +145,7 @@ echo    Panel: http://%IP%:8989
 echo ========================================
 echo.
 echo Uruchamiam aplikacje...
-start "" python "%INSTALL_DIR%\app.py"
+start "" cmd /c "%INSTALL_DIR%\uruchom.bat"
 echo.
 echo Aplikacja wystartowala. Zamknij to okno.
 echo Przy kazdym resecie komputera uruchomi sie automatycznie.

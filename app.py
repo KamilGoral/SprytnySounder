@@ -29,11 +29,44 @@ import requests
 from poland_holidays import is_trade_day, get_trade_info
 
 # === Konfiguracja ===
+# Warstwy (każda nadpisuje poprzednią):
+#   1. config.defaults.json  – wspólne ustawienia z repo (te same na każdym sklepie)
+#   2. locations/<location>.json – tożsamość placówki z repo (store_name, sunday_inverted...)
+#      gdzie <location> to zawartość pliku location.txt (jedno słowo, per maszyna)
+#   3. config.json – lokalne ustawienia maszyny (host auto-wykryty, nadpisania z panelu)
+# Dzięki temu auto-update (repo) nigdy nie kasuje ustawień sklepu, a dodanie nowej
+# placówki = dodanie locations/<nazwa>.json do repo + location.txt na maszynie.
 CONFIG_FILE = "config.json"
+DEFAULTS_FILE = "config.defaults.json"
+LOCATION_FILE = "location.txt"
+LOCATIONS_DIR = "locations"
+
+def _read_json(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _read_location_name():
+    try:
+        with open(LOCATION_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return ""
 
 def load_config():
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    cfg = {}
+    # 1. Wspólne domyślne z repo
+    cfg.update(_read_json(DEFAULTS_FILE))
+    # 2. Ustawienia per lokalizacja z repo
+    location = _read_location_name()
+    if location:
+        cfg.update(_read_json(os.path.join(LOCATIONS_DIR, location + ".json")))
+    # 3. Lokalne ustawienia maszyny (najwyższy priorytet). Stare sklepy mają tu pełny
+    #    config.json, więc działają dokładnie jak dawniej (wsteczna zgodność).
+    cfg.update(_read_json(CONFIG_FILE))
+    return cfg
 
 config = load_config()
 

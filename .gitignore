@@ -19,6 +19,12 @@ build/
 log.txt
 statystyka.txt
 temp_sound_file.mp3
+backup/
+
+# Ustawienia lokalne maszyny (NIE w repo — nigdy nie nadpisywane przez aktualizacje).
+# Wzór: config.example.json. Tożsamość placówki: locations/<nazwa>.json + location.txt.
+config.json
+location.txt
 
 # Environment
 .env

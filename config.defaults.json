@@ -1,18 +1,14 @@
 {
-  "host": "192.168.133.101",
   "port": 8989,
-  "subnet_mask": 24,
-  "gateway": "192.168.133.1",
-  "dns": ["8.8.8.8", "1.1.1.1"],
   "sound_folder": "static/sounds",
   "log_file": "log.txt",
   "stats_file": "statystyka.txt",
   "template_folder": "templates",
   "static_folder": "static",
-  "version": "1.1.0",
-  "sunday_inverted": false,
+  "version": "1.2.0",
   "update_enabled": true,
   "update_url": "https://github.com/KamilGoral/SprytnySounder",
   "update_check_interval_hours": 24,
+  "sunday_inverted": false,
   "store_name": "SprytnySounder"
 }

@@ -159,8 +159,14 @@ def download_and_update(config, force=False):
             
             source_dir = os.path.join(tmpdir, extracted_dirs[0])
             
-            # Kopiuj pliki (bez venv, build, dist, .git)
-            skip_dirs = {"venv", "build", "dist", ".git", "__pycache__", ".idea"}
+            # Kopiuj pliki, ALE nigdy nie nadpisuj lokalnych ustawień sklepu
+            # (config.json, location.txt) ani lokalnych danych (logi, statystyki, backup).
+            skip_dirs = {
+                "venv", "venv_tts", "build", "dist", ".git", "__pycache__", ".idea",
+                ".secrets", "backup",
+                "config.json", "location.txt",
+                "log.txt", "statystyka.txt", "temp_sound_file.mp3",
+            }
             for item in os.listdir(source_dir):
                 if item in skip_dirs:
                     continue

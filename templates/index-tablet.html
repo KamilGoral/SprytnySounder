@@ -137,7 +137,7 @@
   <script>
     async function playSound(filename) {
       try {
-        const response = await fetch('http://192.168.133.101:8989/play-defined-sound', {
+        const response = await fetch('/play-defined-sound', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filename })

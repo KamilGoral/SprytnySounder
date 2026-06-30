@@ -87,7 +87,7 @@ try {
     Write-Host "  Folder zrodlowy: $($folders[0].Name)"
 
     # Pliki i foldery do pominiecia (NIE nadpisujemy configu sklepu!)
-    $SKIP = @('venv', '.git', '__pycache__', 'build', 'dist', '.idea', 'venv_tts', '.secrets', 'config.json', 'aktualizuj.ps1', 'log.txt', 'statystyka.txt')
+    $SKIP = @('venv', '.git', '__pycache__', 'build', 'dist', '.idea', 'venv_tts', '.secrets', 'config.json', 'location.txt', 'backup', 'aktualizuj.ps1', 'log.txt', 'statystyka.txt', 'temp_sound_file.mp3')
 
     # Kopiuj pliki (bez pomijanych)
     Get-ChildItem $SOURCE -Exclude $SKIP | ForEach-Object {

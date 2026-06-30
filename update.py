@@ -27,6 +27,19 @@ import io
 import time
 import requests  # pip install requests
 
+# Konsola na sklepach bywa cp1250 (Python 3.6) — emoji w printach (✓ 📦 ⚠️ …)
+# nie mogą wywalać skryptu UnicodeEncodeError. Działa na 3.6 i 3.7+.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Python 3.7+
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except AttributeError:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8",
+                                  errors="replace", line_buffering=True)
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8",
+                                  errors="replace", line_buffering=True)
+except Exception:
+    pass
+
 CONFIG_FILE = "config.json"
 DEFAULTS_FILE = "config.defaults.json"
 LOCATION_FILE = "location.txt"
@@ -134,8 +147,9 @@ def download_and_update(config, force=False):
             result = subprocess.run(
                 ["git", "pull"],
                 cwd=BASE_PATH,
-                capture_output=True,
-                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,  # 'text=True' istnieje dopiero w 3.7
                 timeout=30
             )
             if result.returncode == 0:

@@ -263,7 +263,8 @@ def run_update_now():
         env["PYTHONIOENCODING"] = "utf-8"
         result = subprocess.run(
             [sys.executable, updater, "--no-restart"],
-            cwd=BASE_PATH, capture_output=True, text=True,
+            cwd=BASE_PATH, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True,  # 'capture_output'/'text' są dopiero w 3.7
             encoding="utf-8", errors="replace", timeout=180, env=env
         )
         if result.stdout:

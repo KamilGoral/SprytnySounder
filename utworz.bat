@@ -240,6 +240,10 @@ echo   Wykryte IP: %IP%
 ) > "%INSTALL_DIR%\config.json"
 echo   OK - config.json utworzony z IP %IP%:8989
 
+:: Stale IP - zeby DHCP nie zmienil kiedys adresu i nie polozyl aplikacji
+set /p STALEIP="   Ustawic wykryte IP %IP% na stale w Windows? (t = tak, zalecane): "
+if /i "%STALEIP%"=="t" call "%INSTALL_DIR%\ustaw-stale-ip.bat" auto
+
 :: Zapytaj o KROTKA nazwe lokalizacji -> location.txt (per maszyna, nie w repo)
 echo.
 echo   Podaj KROTKA nazwe lokalizacji - male litery, bez spacji i polskich znakow.

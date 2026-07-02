@@ -203,6 +203,9 @@ echo   OK - pliki skopiowane do %INSTALL_DIR%
 
 :: === Krok 5: Instalacja bibliotek ===
 echo [5/6] Instalacja bibliotek Python...
+:: Reczne instalacje Pythona bywaja bez pip-a - ensurepip go dostawia
+"%PYTHON%" -m pip --version >nul 2>&1
+if errorlevel 1 "%PYTHON%" -m ensurepip --upgrade >nul 2>&1
 "%PYTHON%" -m pip install -q --upgrade pip >nul 2>&1
 "%PYTHON%" -m pip install -q -r "%INSTALL_DIR%\requirements.txt"
 if errorlevel 1 (

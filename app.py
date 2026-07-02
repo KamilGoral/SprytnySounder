@@ -55,17 +55,37 @@ def _read_location_name():
     except Exception:
         return ""
 
+def _resolve_location(local_cfg):
+    # Nazwa lokalizacji: najpierw location.txt (per maszyna), a gdy go brak -
+    # dopasowanie po IP maszyny z locations/machines.json (w repo, więc placówkę
+    # można "podpiąć" zdalnie samym pushem, bez tworzenia plików na maszynie).
+    location = _read_location_name()
+    if location:
+        return location
+    machines = _read_json(os.path.join(LOCATIONS_DIR, "machines.json"))
+    location = machines.get(str(local_cfg.get("host", "")).strip(), "")
+    if location:
+        # utrwal, żeby maszyna zachowała tożsamość nawet po zmianie machines.json
+        try:
+            with open(LOCATION_FILE, "w", encoding="utf-8") as f:
+                f.write(location + "\n")
+        except Exception:
+            pass
+    return location
+
 def load_config():
+    # 3. warstwa czytana najpierw, bo jej "host" służy do dopasowania lokalizacji
+    local_cfg = _read_json(CONFIG_FILE)
     cfg = {}
     # 1. Wspólne domyślne z repo
     cfg.update(_read_json(DEFAULTS_FILE))
     # 2. Ustawienia per lokalizacja z repo
-    location = _read_location_name()
+    location = _resolve_location(local_cfg)
     if location:
         cfg.update(_read_json(os.path.join(LOCATIONS_DIR, location + ".json")))
     # 3. Lokalne ustawienia maszyny (najwyższy priorytet). Stare sklepy mają tu pełny
     #    config.json, więc działają dokładnie jak dawniej (wsteczna zgodność).
-    cfg.update(_read_json(CONFIG_FILE))
+    cfg.update(local_cfg)
     return cfg
 
 config = load_config()

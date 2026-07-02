@@ -53,7 +53,7 @@ call :DOWNLOAD "https://www.python.org/ftp/python/%PYVER%/python-%PYVER%%PYSUFFI
 if errorlevel 1 (
     echo   BLAD - nie mozna pobrac Pythona. Sprawdz polaczenie z internetem.
     echo   Na Windows 7: upewnij sie, ze jest IE11 i wlaczone TLS 1.2
-    echo   (Opcje internetowe - Zaawansowane - Uzyj TLS 1.2).
+    echo   w Opcjach internetowych - Zaawansowane.
     pause
     exit /b 1
 )
@@ -104,7 +104,7 @@ set "SOURCE="
 for /d %%i in ("%TEMP_DIR%\*") do set "SOURCE=%%i"
 if not defined SOURCE set "SOURCE=%TEMP_DIR%"
 if not exist "%SOURCE%\app.py" (
-    echo   BLAD - archiwum niekompletne (brak app.py)
+    echo   BLAD - archiwum niekompletne - brak app.py
     pause
     exit /b 1
 )
@@ -161,14 +161,14 @@ echo   OK - config.json utworzony z IP %IP%:8989
 echo.
 echo   Podaj KROTKA nazwe lokalizacji - male litery, bez spacji i polskich znakow.
 echo   Przyklady: kilinskiego, bielska, sulkowice, krotka2a
-echo   (Mozna zostawic puste - app dopasuje lokalizacje po IP
-echo    z pliku locations\machines.json w repo)
+echo   Mozna zostawic puste - app dopasuje lokalizacje po IP
+echo    z pliku locations\machines.json w repo
 set /p LOC="   Lokalizacja: "
 if not "%LOC%"=="" (
     >"%INSTALL_DIR%\location.txt" echo %LOC%
     echo   OK - location.txt = %LOC%
     echo   WAZNE: w repo musi istniec plik  locations\%LOC%.json
-    echo          (store_name + sunday_inverted). Patrz locations\README.md
+    echo          ze store_name i sunday_inverted. Patrz locations\README.md
 ) else (
     echo   Pominieto - lokalizacja zostanie dopasowana po IP z repo
 )

@@ -43,6 +43,33 @@ if "%ARCH%"=="win32" (
 echo Wykryto: Windows %WINMAJ% (%ARCH%) - Python %PYVER%
 echo.
 
+:: === Krok 0: Universal C Runtime - Windows 7/8 ===
+:: Bez UCRT z KB2999226 python.exe pada z bledem api-ms-win-crt-runtime-l1-1-0.dll.
+:: VC++ Redistributable 2015-2019 instaluje UCRT. Sprawdzamy PRZED uruchamianiem
+:: pythona, bo proba startu bez tej DLL wyswietla okno bledu.
+if %WINMAJ% GEQ 10 goto :UCRT_OK
+if exist "%SystemRoot%\System32\ucrtbase.dll" goto :UCRT_OK
+echo [0/6] Brak Universal C Runtime - pobieram VC++ Redistributable...
+if "%ARCH%"=="win32" (set "VC_URL=https://aka.ms/vs/16/release/vc_redist.x86.exe") else (set "VC_URL=https://aka.ms/vs/16/release/vc_redist.x64.exe")
+call :DOWNLOAD "%VC_URL%" "%TEMP%\vc_redist.exe"
+if errorlevel 1 (
+    echo   BLAD - nie mozna pobrac VC++ Redistributable. Sprawdz internet
+    echo   albo zainstaluj recznie: aka.ms/vs/16/release/vc_redist.x64.exe
+    pause
+    exit /b 1
+)
+echo   Instalowanie - potwierdz okno uprawnien, jesli sie pojawi...
+start /wait "" "%TEMP%\vc_redist.exe" /install /quiet /norestart
+if not exist "%SystemRoot%\System32\ucrtbase.dll" (
+    echo   UWAGA - Universal C Runtime nadal nieobecny. Zainstaluj recznie
+    echo   vc_redist z aka.ms/vs/16/release/vc_redist.x64.exe i uruchom ponownie.
+    pause
+    exit /b 1
+)
+del "%TEMP%\vc_redist.exe" 2>nul
+echo   OK - Universal C Runtime zainstalowany
+:UCRT_OK
+
 :: === Krok 1: Python ===
 echo [1/6] Sprawdzanie Pythona...
 call :FIND_PYTHON

@@ -43,11 +43,59 @@ if "%ARCH%"=="win32" (
 echo Wykryto: Windows %WINMAJ% (%ARCH%) - Python %PYVER%
 echo.
 
-:: === Krok 0: Universal C Runtime - Windows 7/8 ===
+:: === Krok 0: Universal C Runtime - Windows 7 ===
 :: Bez UCRT z KB2999226 python.exe pada z bledem api-ms-win-crt-runtime-l1-1-0.dll.
-:: VC++ Redistributable 2015-2019 instaluje UCRT. Sprawdzamy PRZED uruchamianiem
-:: pythona, bo proba startu bez tej DLL wyswietla okno bledu.
+:: Instalacja przez expand+DISM, celowo NIE przez wusa/vc_redist - dziala tez,
+:: gdy usluga Windows Update jest wylaczona albo zablokowana (czeste na sklepach).
 if %WINMAJ% GEQ 10 goto :UCRT_OK
+if exist "%SystemRoot%\System32\ucrtbase.dll" goto :UCRT_OK
+echo [0/6] Brak Universal C Runtime - instaluje KB2999226...
+if "%ARCH%"=="win32" (set "KBARCH=x86") else (set "KBARCH=x64")
+if "%KBARCH%"=="x86" (set "UCRT_URL=https://download.microsoft.com/download/4/F/E/4FE73868-5EDD-4B47-8B33-CE1BB7B2B16A/Windows6.1-KB2999226-x86.msu") else (set "UCRT_URL=https://download.microsoft.com/download/1/1/5/11565A9A-EA09-4F0A-A57E-520D5D138140/Windows6.1-KB2999226-x64.msu")
+
+:: Najpierw szukaj MSU lokalnie - w Pobranych i w Package Cache po nieudanym vc_redist
+set "UCRT_MSU="
+if exist "%USERPROFILE%\Downloads\Windows6.1-KB2999226-%KBARCH%.msu" set "UCRT_MSU=%USERPROFILE%\Downloads\Windows6.1-KB2999226-%KBARCH%.msu"
+if not defined UCRT_MSU for /r "%ProgramData%\Package Cache" %%F in (Windows6.1-KB2999226-%KBARCH%.msu) do if not defined UCRT_MSU if exist "%%~F" set "UCRT_MSU=%%~F"
+if defined UCRT_MSU echo   Znaleziono lokalnie: %UCRT_MSU%
+if defined UCRT_MSU goto :UCRT_HAVE_MSU
+
+set "UCRT_MSU=%TEMP%\kb2999226.msu"
+call :DOWNLOAD "%UCRT_URL%" "%UCRT_MSU%"
+if errorlevel 1 (
+    echo   BLAD - nie mozna pobrac KB2999226 przez system.
+    echo   Otwieram link w przegladarce - pobierz plik do folderu Pobrane
+    echo   i uruchom ten skrypt jeszcze raz.
+    start "" "%UCRT_URL%"
+    pause
+    exit /b 1
+)
+
+:UCRT_HAVE_MSU
+set "UCRT_DIR=%TEMP%\kb2999226"
+if exist "%UCRT_DIR%" rmdir /s /q "%UCRT_DIR%"
+mkdir "%UCRT_DIR%"
+expand -F:* "%UCRT_MSU%" "%UCRT_DIR%" >nul
+set "UCRT_CAB="
+for %%C in ("%UCRT_DIR%\Windows*.cab") do set "UCRT_CAB=%%~C"
+if not defined UCRT_CAB (
+    echo   BLAD - nie udalo sie wypakowac KB2999226
+    pause
+    exit /b 1
+)
+echo   Instalowanie KB2999226 przez DISM - potwierdz okno uprawnien...
+> "%TEMP%\ss_ucrt.cmd" echo @dism /online /add-package /packagepath:"%UCRT_CAB%" /quiet /norestart
+powershell -NoProfile -Command "Start-Process '%TEMP%\ss_ucrt.cmd' -Verb RunAs -Wait" >nul 2>&1
+del "%TEMP%\ss_ucrt.cmd" 2>nul
+rmdir /s /q "%UCRT_DIR%" 2>nul
+if not exist "%SystemRoot%\System32\ucrtbase.dll" (
+    echo   UWAGA - Universal C Runtime nadal nieobecny.
+    echo   Zrestartuj komputer i uruchom ten skrypt jeszcze raz.
+    pause
+    exit /b 1
+)
+echo   OK - Universal C Runtime zainstalowany
+:UCRT_OK
 if exist "%SystemRoot%\System32\ucrtbase.dll" goto :UCRT_OK
 echo [0/6] Brak Universal C Runtime - pobieram VC++ Redistributable...
 if "%ARCH%"=="win32" (set "VC_URL=https://aka.ms/vs/16/release/vc_redist.x86.exe") else (set "VC_URL=https://aka.ms/vs/16/release/vc_redist.x64.exe")

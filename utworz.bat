@@ -53,8 +53,10 @@ echo [0/6] Brak Universal C Runtime - pobieram VC++ Redistributable...
 if "%ARCH%"=="win32" (set "VC_URL=https://aka.ms/vs/16/release/vc_redist.x86.exe") else (set "VC_URL=https://aka.ms/vs/16/release/vc_redist.x64.exe")
 call :DOWNLOAD "%VC_URL%" "%TEMP%\vc_redist.exe"
 if errorlevel 1 (
-    echo   BLAD - nie mozna pobrac VC++ Redistributable. Sprawdz internet
-    echo   albo zainstaluj recznie: aka.ms/vs/16/release/vc_redist.x64.exe
+    echo   BLAD - nie mozna pobrac VC++ Redistributable przez system.
+    echo   Otwieram link w przegladarce - pobierz plik, zainstaluj go,
+    echo   a potem uruchom ten skrypt jeszcze raz.
+    start "" "%VC_URL%"
     pause
     exit /b 1
 )
@@ -76,11 +78,14 @@ call :FIND_PYTHON
 if defined PYTHON goto :PYTHON_OK
 
 echo   Python nie znaleziony. Pobieram Python %PYVER%...
-call :DOWNLOAD "https://www.python.org/ftp/python/%PYVER%/python-%PYVER%%PYSUFFIX%.exe" "%TEMP%\python-installer.exe"
+set "PY_URL=https://www.python.org/ftp/python/%PYVER%/python-%PYVER%%PYSUFFIX%.exe"
+call :DOWNLOAD "%PY_URL%" "%TEMP%\python-installer.exe"
 if errorlevel 1 (
-    echo   BLAD - nie mozna pobrac Pythona. Sprawdz polaczenie z internetem.
-    echo   Na Windows 7: upewnij sie, ze jest IE11 i wlaczone TLS 1.2
-    echo   w Opcjach internetowych - Zaawansowane.
+    echo   BLAD - nie mozna pobrac Pythona przez system.
+    echo   Otwieram link w przegladarce - pobierz plik, zainstaluj go
+    echo   z opcja Add to PATH, a potem uruchom ten skrypt jeszcze raz.
+    echo   Na Win7 pomaga tez wlaczenie TLS 1.2 w Opcjach internetowych.
+    start "" "%PY_URL%"
     pause
     exit /b 1
 )

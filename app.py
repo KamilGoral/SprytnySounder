@@ -128,6 +128,7 @@ _system_muted = False  # Czy system jest wyciszony automatycznie (dzieñ wolny o
 _manual_muted = bool(config.get("manual_mute", False))  # Rêczne wyciszenie z panelu /admin
 _last_trade_check = None
 _last_trade_result = None
+_play_lock = threading.Lock()  # jeden komunikat naraz (mixer nie jest thread-safe)
 
 
 def log_event(filename):
@@ -226,30 +227,37 @@ def play_sound_with_isolation(sound_path, force=False):
             print(f"⛔ Blokada: {trade_info['reason']} — dŸwiêk nie zostanie odtworzony")
             return
 
-    try:
-        pythoncom.CoInitialize()
-        own_name = os.path.basename(sys.executable).lower()
-        exclude = {own_name}
+    own_name = os.path.basename(sys.executable).lower()
+    exclude = {own_name}
 
-        # Wycisz resztê systemu na czas komunikatu
-        set_all_sessions_volume(DUCK_VOLUME, exclude_names=exclude)
+    # Jeden komunikat naraz — równoleg³e w¹tki potrafi³y sobie nawzajem
+    # zamkn¹æ mixer (pygame.error) w trakcie grania
+    with _play_lock:
+        try:
+            pythoncom.CoInitialize()
 
-        # Rozgrzewka
-        warmup_path = os.path.join(SOUND_DIRECTORY, "ping.mp3")
-        if os.path.exists(warmup_path):
-            play_single_sound(warmup_path)
-            time.sleep(0.1)
+            # Wycisz resztê systemu na czas komunikatu
+            set_all_sessions_volume(DUCK_VOLUME, exclude_names=exclude)
 
-        # W³aœciwy komunikat
-        play_single_sound(sound_path)
+            # Rozgrzewka
+            warmup_path = os.path.join(SOUND_DIRECTORY, "ping.mp3")
+            if os.path.exists(warmup_path):
+                play_single_sound(warmup_path)
+                time.sleep(0.1)
 
-        # Przywróæ g³oœnoœæ t³a
-        set_all_sessions_volume(RESTORE_VOLUME, exclude_names=exclude)
+            # W³aœciwy komunikat
+            play_single_sound(sound_path)
 
-    except Exception as e:
-        print(f"❌ B³¹d odtwarzania: {e}")
-    finally:
-        pygame.mixer.quit()
+        except Exception as e:
+            print(f"❌ B³¹d odtwarzania: {e}")
+        finally:
+            # Przywróæ g³oœnoœæ t³a ZAWSZE — inaczej b³¹d odtwarzania
+            # zostawia³ radio œciszone do DUCK_VOLUME a¿ do restartu komputera
+            try:
+                set_all_sessions_volume(RESTORE_VOLUME, exclude_names=exclude)
+            except Exception as e:
+                print(f"❌ B³¹d przywracania g³oœnoœci: {e}")
+            pygame.mixer.quit()
 
 
 # === AUTO-UPDATER ===
@@ -623,4 +631,6 @@ if __name__ == '__main__':
     print(f"   Odwrócone niedziele: {SUNDAY_INVERTED}")
     print(f"   Wyciszenie: {'TAK' if _system_muted else 'NIE'}")
 
-    app.run(host=HOST, port=PORT, debug=True, threaded=False)
+    # debug=False: reloader Werkzeuga potrafi³ zrestartowaæ proces w œrodku
+    # komunikatu (gdy auto-update podmieni pliki) = radio zostaje œciszone
+    app.run(host=HOST, port=PORT, debug=False, threaded=False)

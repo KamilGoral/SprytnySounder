@@ -304,8 +304,24 @@ def run_update_now():
     return (after != before, before, after)
 
 
+UPDATE_HOURS = (8, 10, 20, 22)  # o tych godzinach sklepy sprawdzaj¹ nowe wersje
+
+
+def _seconds_until_next_update_hour():
+    """Ile sekund do najbli¿szej zaplanowanej godziny sprawdzenia (UPDATE_HOURS)."""
+    now = datetime.now()
+    candidates = []
+    for day_offset in (0, 1):  # dziœ i jutro -> zawsze znajdzie kolejny slot
+        base = now + timedelta(days=day_offset)
+        for h in UPDATE_HOURS:
+            t = base.replace(hour=h, minute=0, second=0, microsecond=0)
+            if t > now:
+                candidates.append(t)
+    return (min(candidates) - now).total_seconds()
+
+
 def auto_update_loop():
-    """Pêtla t³a — co UPDATE_INTERVAL godzin pobiera i wgrywa zmiany, potem restart."""
+    """Pêtla t³a — o godzinach UPDATE_HOURS pobiera i wgrywa zmiany, potem restart."""
     time.sleep(15)  # Poczekaj a¿ Flask wystartuje
     while True:
         try:
@@ -319,7 +335,7 @@ def auto_update_loop():
         except Exception as e:
             print(f"[Auto-Update] B³¹d: {e}")
 
-        time.sleep(UPDATE_INTERVAL * 3600)
+        time.sleep(_seconds_until_next_update_hour())
 
 
 # === ENDPOINTY API ===
@@ -624,7 +640,7 @@ if __name__ == '__main__':
     if UPDATE_ENABLED and UPDATE_URL:
         updater = threading.Thread(target=auto_update_loop, daemon=True)
         updater.start()
-        print(f"🔄 Auto-updater w³¹czony (co {UPDATE_INTERVAL}h)")
+        print(f"🔄 Auto-updater w³¹czony (o godzinach: {', '.join(f'{h}:00' for h in UPDATE_HOURS)})")
 
     print(f"📢 SprytnySounder v{VERSION} wystartowa³")
     print(f"   Host: {HOST}:{PORT}")

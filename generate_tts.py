@@ -27,6 +27,10 @@ MESSAGES = {
         "Uwaga! Potrzebna pomoc przy recyklomacie. "
         "Ktoś z sali sprzedaży proszony o podejście do klienta."
     ),
+    "zabierz-koszyk.mp3": (
+        "Drodzy Klienci, przypominamy, że na salę sprzedaży zapraszamy "
+        "z koszykiem lub wózkiem. Prosimy zabrać go przy wejściu. Dziękuję."
+    ),
 }
 
 def main():

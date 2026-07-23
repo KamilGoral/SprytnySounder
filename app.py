@@ -118,7 +118,7 @@ RESTORE_VOLUME = int(config.get("restore_volume", 33))            # tło PO komu
 BUTTONS = [
     {"file": "kasa-2.mp3",              "label": "Otwórz kasę 2",         "icon": "fa-cash-register"},
     {"file": "kasa-3.mp3",              "label": "Otwórz kasę 3",         "icon": "fa-cash-register"},
-    {"file": "kasa-biuro.mp3",          "label": "Sprzedawca do biura",   "icon": "fa-person-walking-arrow-right"},
+    {"file": "kasa-biuro.mp3",          "label": "Sprzedawca do biura",   "icon": "fa-door-open"},
     {"file": "help-sco.mp3",            "label": "Samoobsługowe - Pomoc", "icon": "fa-shopping-cart"},
     {"file": "korzystaniesco.mp3",      "label": "Samoobsługowe - Promocja", "icon": "fa-hand-pointer"},
     {"file": "help-gas.mp3",            "label": "Butla gazowa",          "icon": "fa-fire"},

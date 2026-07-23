@@ -24,6 +24,7 @@
       background: var(--bg);
       color: var(--ink);
       line-height: 1.5;
+      padding-bottom: 82px; /* miejsce na stały pasek Zapisz */
     }
     header {
       background: #fff;
@@ -45,7 +46,23 @@
     .badge.off { background: var(--danger-soft); color: var(--danger); }
     .badge.neutral { background: #e2e8f0; color: #475569; }
 
+    /* Zakładki */
+    .tabs {
+      display: flex; gap: 2px; background: #fff;
+      border-bottom: 1px solid var(--line);
+      padding: 0 12px; overflow-x: auto; position: sticky; top: 0; z-index: 5;
+    }
+    .tab {
+      padding: 15px 16px; font: inherit; font-weight: 600; font-size: 14px;
+      color: var(--muted); background: none; border: none;
+      border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap;
+    }
+    .tab:hover { color: var(--ink); }
+    .tab.active { color: var(--green-dark); border-bottom-color: var(--green); }
+
     main { max-width: 720px; margin: 0 auto; padding: 24px; }
+    .panel { display: none; }
+    .panel.active { display: block; }
     .card {
       background: #fff;
       border: 1px solid var(--line);
@@ -77,7 +94,7 @@
     .switch input:checked + .slider { background: var(--green); }
     .switch input:checked + .slider::before { transform: translateX(22px); }
 
-    .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    .btn-row { display: flex; gap: 10px; }
     button {
       font-family: inherit; font-size: 15px; font-weight: 600; padding: 12px 20px;
       border-radius: 10px; border: 1px solid transparent; cursor: pointer; transition: .15s;
@@ -88,14 +105,24 @@
     .btn-ghost { background: #fff; color: var(--ink); border-color: var(--line); }
     .btn-ghost:hover { border-color: var(--green); color: var(--green-dark); }
 
+    /* Stały pasek Zapisz */
+    .savebar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+      background: #fff; border-top: 1px solid var(--line);
+      padding: 14px 24px;
+    }
+    .savebar-inner { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .savebar .note { font-size: 12.5px; color: var(--muted); }
+    .savebar .btn-primary { padding: 12px 28px; }
+
     #toast {
-      position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px);
+      position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%) translateY(20px);
       background: var(--ink); color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 14px;
-      opacity: 0; pointer-events: none; transition: .25s; max-width: 90vw;
+      opacity: 0; pointer-events: none; transition: .25s; max-width: 90vw; z-index: 10;
     }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     #toast.err { background: var(--danger); }
-    .foot { text-align: center; color: var(--muted); font-size: 12.5px; padding: 8px 0 24px; }
+    .foot { text-align: center; color: var(--muted); font-size: 12.5px; padding: 8px 0 4px; }
   </style>
 </head>
 <body>
@@ -110,79 +137,98 @@
     <div class="badges" id="badges"></div>
   </header>
 
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="glosnosc">Głośność</button>
+    <button class="tab" data-tab="przyciski">Przyciski</button>
+    <button class="tab" data-tab="sklep">Sklep</button>
+    <button class="tab" data-tab="system">System</button>
+  </nav>
+
   <main>
-    <div class="card">
-      <h2>Głośność</h2>
-
-      <div class="field">
-        <div class="label"><span class="name">Głośność komunikatu</span><span class="val"><span id="annV">100</span>%</span></div>
-        <input type="range" id="ann" min="0" max="100" value="100">
-        <div class="hint">Jak głośno odtwarzany jest sam komunikat na sali.</div>
-      </div>
-
-      <div class="field">
-        <div class="label"><span class="name">Tło podczas komunikatu</span><span class="val"><span id="duckV">5</span>%</span></div>
-        <input type="range" id="duck" min="0" max="100" value="5">
-        <div class="hint">Do ilu ściszane są inne dźwięki (np. radio) w trakcie komunikatu.</div>
-      </div>
-
-      <div class="field">
-        <div class="label"><span class="name">Głośność radia / tła (np. Lewiatan)</span><span class="val"><span id="restV">33</span>%</span></div>
-        <input type="range" id="rest" min="0" max="100" value="33">
-        <div class="hint">Normalny poziom radia między komunikatami. Zmiana działa od razu po Zapisz.</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Tryb pracy</h2>
-      <div class="toggle">
-        <div class="t-text">
-          <div class="name">Ręczne wyciszenie</div>
-          <div class="hint">Wstrzymuje wszystkie komunikaty, dopóki nie wyłączysz.</div>
+    <!-- GŁOŚNOŚĆ -->
+    <section class="panel active" id="panel-glosnosc">
+      <div class="card">
+        <h2>Głośność</h2>
+        <div class="field">
+          <div class="label"><span class="name">Głośność komunikatu</span><span class="val"><span id="annV">100</span>%</span></div>
+          <input type="range" id="ann" min="0" max="100" value="100">
+          <div class="hint">Jak głośno odtwarzany jest sam komunikat na sali.</div>
         </div>
-        <label class="switch"><input type="checkbox" id="mute"><span class="slider"></span></label>
-      </div>
-      <div class="toggle">
-        <div class="t-text">
-          <div class="name">Odwrócone niedziele</div>
-          <div class="hint">Dla sklepów grających w niedziele niehandlowe (np. Krótka 2a).</div>
+        <div class="field">
+          <div class="label"><span class="name">Tło podczas komunikatu</span><span class="val"><span id="duckV">5</span>%</span></div>
+          <input type="range" id="duck" min="0" max="100" value="5">
+          <div class="hint">Do ilu ściszane są inne dźwięki (np. radio) w trakcie komunikatu.</div>
         </div>
-        <label class="switch"><input type="checkbox" id="sunday"><span class="slider"></span></label>
+        <div class="field">
+          <div class="label"><span class="name">Głośność radia / tła (np. Lewiatan)</span><span class="val"><span id="restV">33</span>%</span></div>
+          <input type="range" id="rest" min="0" max="100" value="33">
+          <div class="hint">Normalny poziom radia między komunikatami. Zmiana działa od razu po Zapisz.</div>
+        </div>
       </div>
-    </div>
+    </section>
 
-    <div class="card">
-      <h2>Sklep</h2>
-      <div class="field">
-        <div class="label"><span class="name">Nazwa wyświetlana</span></div>
-        <input type="text" id="store" placeholder="np. Kilińskiego">
-        <div class="hint">Pokazywana w nagłówku paneli.</div>
+    <!-- PRZYCISKI -->
+    <section class="panel" id="panel-przyciski">
+      <div class="card">
+        <h2>Przyciski na sali</h2>
+        <div class="hint" style="margin:-8px 0 14px">Wyłącz przyciski, których ten sklep nie ma (np. brak 3. kasy albo kas samoobsługowych). Zmiana dotyczy tylko tej placówki i działa po „Zapisz".</div>
+        {% for b in buttons %}
+        <div class="toggle">
+          <div class="t-text"><div class="name">{{ b.label }}</div></div>
+          <label class="switch"><input type="checkbox" class="btn-vis" data-file="{{ b.file }}" {% if b.file not in hidden %}checked{% endif %}><span class="slider"></span></label>
+        </div>
+        {% endfor %}
       </div>
-    </div>
+    </section>
 
-    <div class="card">
-      <h2>Przyciski na sali</h2>
-      <div class="hint" style="margin:-8px 0 14px">Wyłącz przyciski, których ten sklep nie ma (np. brak 3. kasy albo kas samoobsługowych). Zmiana dotyczy tylko tej placówki i działa po „Zapisz ustawienia".</div>
-      {% for b in buttons %}
-      <div class="toggle">
-        <div class="t-text"><div class="name">{{ b.label }}</div></div>
-        <label class="switch"><input type="checkbox" class="btn-vis" data-file="{{ b.file }}" {% if b.file not in hidden %}checked{% endif %}><span class="slider"></span></label>
+    <!-- SKLEP -->
+    <section class="panel" id="panel-sklep">
+      <div class="card">
+        <h2>Tryb pracy</h2>
+        <div class="toggle">
+          <div class="t-text">
+            <div class="name">Ręczne wyciszenie</div>
+            <div class="hint">Wstrzymuje wszystkie komunikaty, dopóki nie wyłączysz. Działa od razu.</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="mute"><span class="slider"></span></label>
+        </div>
+        <div class="toggle">
+          <div class="t-text">
+            <div class="name">Odwrócone niedziele</div>
+            <div class="hint">Dla sklepów grających w niedziele niehandlowe (np. Krótka 2a).</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="sunday"><span class="slider"></span></label>
+        </div>
       </div>
-      {% endfor %}
-    </div>
-
-    <div class="card">
-      <h2>Akcje</h2>
-      <div class="actions">
-        <button class="btn-primary" id="save">Zapisz ustawienia</button>
-        <button class="btn-ghost" id="test">▶ Testuj dźwięk</button>
-        <button class="btn-ghost" id="update">Sprawdź aktualizację</button>
+      <div class="card">
+        <h2>Nazwa sklepu</h2>
+        <div class="field">
+          <input type="text" id="store" placeholder="np. Kilińskiego">
+          <div class="hint">Pokazywana w nagłówku paneli.</div>
+        </div>
       </div>
-      <div class="hint" style="margin-top:14px">Test gra zawsze — nawet przy wyciszeniu i w dni wolne. Zapisz ustawienia, żeby test użył nowej głośności.</div>
-    </div>
+    </section>
 
-    <div class="foot">SprytnySounder · zmiany zapisują się lokalnie na tym sklepie</div>
+    <!-- SYSTEM -->
+    <section class="panel" id="panel-system">
+      <div class="card">
+        <h2>Test i aktualizacja</h2>
+        <div class="btn-row">
+          <button class="btn-ghost" id="test">▶ Testuj dźwięk</button>
+          <button class="btn-ghost" id="update">Sprawdź aktualizację</button>
+        </div>
+        <div class="hint" style="margin-top:14px">Test gra zawsze — nawet przy wyciszeniu i w dni wolne. Zapisz ustawienia, żeby test użył nowej głośności.</div>
+      </div>
+      <div class="foot">SprytnySounder · zmiany zapisują się lokalnie na tym sklepie</div>
+    </section>
   </main>
+
+  <div class="savebar">
+    <div class="savebar-inner">
+      <span class="note">Zmiany z każdej zakładki zapisują się razem.</span>
+      <button class="btn-primary" id="save">Zapisz ustawienia</button>
+    </div>
+  </div>
 
   <div id="toast"></div>
 
@@ -190,6 +236,16 @@
     const $ = id => document.getElementById(id);
     const ann = $('ann'), duck = $('duck'), rest = $('rest');
     const mute = $('mute'), sunday = $('sunday'), store = $('store');
+
+    // Zakładki
+    document.querySelectorAll('.tab').forEach(t => {
+      t.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        t.classList.add('active');
+        $('panel-' + t.dataset.tab).classList.add('active');
+      });
+    });
 
     function bindRange(input, out) {
       const o = $(out);
@@ -262,7 +318,7 @@
       } catch (e) { toast('Błąd zapisu: ' + e.message, true); }
     });
 
-    // Przełączniki działają od razu (bez czekania na Zapisz)
+    // Ręczne wyciszenie działa od razu (bez czekania na Zapisz)
     mute.addEventListener('change', async () => {
       try { await postConfig({ manual_mute: mute.checked }); toast(mute.checked ? 'Wyciszono' : 'Wznowiono'); load(); }
       catch (e) { toast('Błąd: ' + e.message, true); }

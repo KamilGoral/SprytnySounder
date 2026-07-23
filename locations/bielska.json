@@ -1,4 +1,10 @@
 {
   "store_name": "Bielska",
-  "sunday_inverted": false
+  "sunday_inverted": false,
+  "restore_volume": 20,
+  "audio_bridge": {
+    "listen_device": "CABLE Output",
+    "playback_device": "Głośniki",
+    "recheck_minutes": 10
+  }
 }

@@ -31,6 +31,9 @@ MESSAGES = {
         "Drodzy Klienci, przypominamy, że na salę sprzedaży zapraszamy "
         "z koszykiem lub wózkiem. Prosimy zabrać go przy wejściu. Dziękuję."
     ),
+    "kasa-2.mp3": "Uwaga, prosimy o otwarcie kasy numer dwa.",
+    "kasa-3.mp3": "Uwaga, prosimy o otwarcie kasy numer trzy.",
+    "kasa-biuro.mp3": "Uwaga, sprzedawca z kasy proszony do biura.",
 }
 
 def main():

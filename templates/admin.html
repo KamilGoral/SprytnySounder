@@ -161,6 +161,17 @@
     </div>
 
     <div class="card">
+      <h2>Przyciski na sali</h2>
+      <div class="hint" style="margin:-8px 0 14px">Wyłącz przyciski, których ten sklep nie ma (np. brak 3. kasy albo kas samoobsługowych). Zmiana dotyczy tylko tej placówki i działa po „Zapisz ustawienia".</div>
+      {% for b in buttons %}
+      <div class="toggle">
+        <div class="t-text"><div class="name">{{ b.label }}</div></div>
+        <label class="switch"><input type="checkbox" class="btn-vis" data-file="{{ b.file }}" {% if b.file not in hidden %}checked{% endif %}><span class="slider"></span></label>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="card">
       <h2>Akcje</h2>
       <div class="actions">
         <button class="btn-primary" id="save">Zapisz ustawienia</button>
@@ -235,13 +246,16 @@
 
     $('save').addEventListener('click', async () => {
       try {
+        const hidden = [...document.querySelectorAll('.btn-vis')]
+          .filter(c => !c.checked).map(c => c.dataset.file);
         await postConfig({
           announcement_volume: +ann.value,
           duck_volume: +duck.value,
           restore_volume: +rest.value,
           manual_mute: mute.checked,
           sunday_inverted: sunday.checked,
-          store_name: store.value.trim()
+          store_name: store.value.trim(),
+          hidden_buttons: hidden
         });
         toast('Zapisano ✓');
         load();

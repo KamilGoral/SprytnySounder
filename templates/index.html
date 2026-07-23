@@ -96,58 +96,12 @@
 </head>
 <body>
     <div class="button-container">
-        <button class="button" onclick="playSound('new-pos.mp3')">
-            <i class="fas fa-cash-register icon"></i>
-            <span class="text">Nowa kasa</span>
+        {% for b in buttons %}
+        <button class="button" onclick="playSound('{{ b.file }}')">
+            <i class="fas {{ b.icon }} icon"></i>
+            <span class="text">{{ b.label }}</span>
         </button>
-        <button class="button" onclick="playSound('help-sco.mp3')">
-            <i class="fas fa-shopping-cart icon"></i>
-            <span class="text">Samoobsługowe - Pomoc</span>
-        </button>
-        <button class="button" onclick="playSound('korzystaniesco.mp3')">
-            <i class="fas fa-hand-pointer icon"></i>
-            <span class="text">Samoobsługowe - Promocja</span>
-        </button>
-        <button class="button" onclick="playSound('help-gas.mp3')">
-            <i class="fas fa-fire icon"></i>
-            <span class="text">Butla gazowa</span>
-        </button>
-        <button class="button" onclick="playSound('new-delivery.mp3')">
-            <i class="fas fa-box icon"></i>
-            <span class="text">Dostawa</span>
-        </button>
-        <button class="button" onclick="playSound('donuts.mp3')">
-            <i class="fas fa-birthday-cake icon"></i>
-            <span class="text">Cukiernica</span>
-        </button>
-        <button class="button" onclick="playSound('call-office.mp3')">
-            <i class="fas fa-user-tie icon"></i>
-            <span class="text">Kierownik zmiany</span>
-        </button>
-        <button class="button" onclick="playSound('Dobregodnia.mp3')">
-            <i class="fas fa-smile icon"></i>
-            <span class="text">Dobrego dnia</span>
-        </button>
-        <button class="button" onclick="playSound('zabierz-koszyk.mp3')">
-            <i class="fas fa-shopping-basket icon"></i>
-            <span class="text">Zabierz koszyk / wózek</span>
-        </button>
-        <button class="button" onclick="playSound('thief.mp3')">
-            <i class="fas fa-user-secret icon"></i>
-            <span class="text">Złodziej</span>
-        </button>
-        <button class="button" onclick="playSound('meat-office.mp3')">
-            <i class="fas fa-drumstick-bite icon"></i>
-            <span class="text">Kierownik mięsny</span>
-        </button>
-        <button class="button" onclick="playSound('recyklomat-oproznij.mp3')">
-            <i class="fas fa-recycle icon"></i>
-            <span class="text">Recyklomat — opróżnij</span>
-        </button>
-        <button class="button" onclick="playSound('recyklomat-pomoc.mp3')">
-            <i class="fas fa-circle-question icon"></i>
-            <span class="text">Recyklomat — pomoc</span>
-        </button>
+        {% endfor %}
     </div>
 
     <script>

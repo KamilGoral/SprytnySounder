@@ -97,6 +97,11 @@ LOG_FILE = config.get("log_file", "log.txt")
 STATS_FILE = config.get("stats_file", "statystyka.txt")
 VERSION = config.get("version", "1.1.0")
 SUNDAY_INVERTED = config.get("sunday_inverted", False)
+# Most audio (tylko placówki z tym kluczem w locations/<nazwa>.json — np. Bielska).
+# Wymusza ustawienie Windows "Nasłuchuj tego urządzenia" CABLE Output -> Głośniki,
+# które po restarcie/zmianie urządzenia potrafi się zgubić i wtedy jest cisza na sali.
+# Pusty klucz = funkcja bezczynna (wszystkie pozostałe sklepy jej nie odpalają).
+AUDIO_BRIDGE = config.get("audio_bridge") or {}
 UPDATE_ENABLED = config.get("update_enabled", True)
 UPDATE_URL = config.get("update_url", "")
 UPDATE_INTERVAL = config.get("update_check_interval_hours", 24)
@@ -106,6 +111,28 @@ STORE_NAME = config.get("store_name", "SprytnySounder")
 ANNOUNCEMENT_VOLUME = int(config.get("announcement_volume", 100))  # głośność komunikatu (%)
 DUCK_VOLUME = int(config.get("duck_volume", 5))                    # tło PODCZAS komunikatu (%)
 RESTORE_VOLUME = int(config.get("restore_volume", 33))            # tło PO komunikacie (%)
+
+# Katalog przycisków — JEDNO źródło prawdy (panel /admin + widok /). Kolejność = układ.
+# Widoczność per placówka: HIDDEN_BUTTONS (lista plików) w lokalnym config.json,
+# przełączana z /admin — sklep bez 3 kas / bez samoobsługi chowa u siebie zbędne.
+BUTTONS = [
+    {"file": "kasa-2.mp3",              "label": "Otwórz kasę 2",         "icon": "fa-cash-register"},
+    {"file": "kasa-3.mp3",              "label": "Otwórz kasę 3",         "icon": "fa-cash-register"},
+    {"file": "kasa-biuro.mp3",          "label": "Sprzedawca do biura",   "icon": "fa-person-walking-arrow-right"},
+    {"file": "help-sco.mp3",            "label": "Samoobsługowe - Pomoc", "icon": "fa-shopping-cart"},
+    {"file": "korzystaniesco.mp3",      "label": "Samoobsługowe - Promocja", "icon": "fa-hand-pointer"},
+    {"file": "help-gas.mp3",            "label": "Butla gazowa",          "icon": "fa-fire"},
+    {"file": "new-delivery.mp3",        "label": "Dostawa",               "icon": "fa-box"},
+    {"file": "donuts.mp3",              "label": "Cukiernica",            "icon": "fa-birthday-cake"},
+    {"file": "call-office.mp3",         "label": "Kierownik zmiany",      "icon": "fa-user-tie"},
+    {"file": "Dobregodnia.mp3",         "label": "Dobrego dnia",          "icon": "fa-smile"},
+    {"file": "zabierz-koszyk.mp3",      "label": "Zabierz koszyk / wózek","icon": "fa-shopping-basket"},
+    {"file": "thief.mp3",               "label": "Złodziej",              "icon": "fa-user-secret"},
+    {"file": "meat-office.mp3",         "label": "Kierownik mięsny",      "icon": "fa-drumstick-bite"},
+    {"file": "recyklomat-oproznij.mp3", "label": "Recyklomat — opróżnij", "icon": "fa-recycle"},
+    {"file": "recyklomat-pomoc.mp3",    "label": "Recyklomat — pomoc",    "icon": "fa-circle-question"},
+]
+HIDDEN_BUTTONS = list(config.get("hidden_buttons", []))  # pliki ukryte na TEJ placówce
 
 if getattr(sys, 'frozen', False):
     BASE_PATH = os.path.dirname(sys.executable)
@@ -258,6 +285,44 @@ def play_sound_with_isolation(sound_path, force=False):
             except Exception as e:
                 print(f"❌ B³¹d przywracania g³oœnoœci: {e}")
             pygame.mixer.quit()
+
+
+# === MOST AUDIO (Nasłuchuj tego urządzenia) ===
+
+def ensure_audio_bridge():
+    """Wymusza most CABLE Output -> Głośniki przez SoundVolumeView (NirSoft).
+    Działa TYLKO gdy w configu placówki jest klucz `audio_bridge` (np. Bielska).
+    Idempotentne — bezpieczne do wołania w kółko. Nigdy nie rzuca wyjątkiem."""
+    if not AUDIO_BRIDGE or os.name != "nt":
+        return
+    listen = AUDIO_BRIDGE.get("listen_device")
+    playback = AUDIO_BRIDGE.get("playback_device")
+    if not listen:
+        return
+    exe = os.path.join(BASE_PATH, "SoundVolumeView.exe")
+    if not os.path.exists(exe):
+        print(f"⚠️ Most audio: brak {exe} — pomijam")
+        return
+
+    def _run(args):
+        # 3.6-safe: bez capture_output=/text= (patrz historia zgodności 3.6 vs 3.7+)
+        try:
+            subprocess.run([exe] + args, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, universal_newlines=True, timeout=15)
+        except Exception as e:
+            print(f"⚠️ Most audio: {args[0]} nie powiódł się: {e}")
+
+    if playback:
+        _run(["/SetPlaybackThroughDevice", listen, playback])
+    _run(["/SetListenToThisDevice", listen, "1"])
+
+
+def audio_bridge_loop():
+    """Wątek tła — przywraca most co interval (domyślnie 10 min)."""
+    interval = int(AUDIO_BRIDGE.get("recheck_minutes", 10)) * 60
+    while True:
+        time.sleep(max(60, interval))
+        ensure_audio_bridge()
 
 
 # === AUTO-UPDATER ===
@@ -459,6 +524,7 @@ def api_status():
         "restore_volume": RESTORE_VOLUME,
         "trade_info": trade_info,
         "update_enabled": UPDATE_ENABLED,
+        "hidden_buttons": HIDDEN_BUTTONS,
         "stats": stats,
         "sounds_available": sorted(os.listdir(SOUND_DIRECTORY)) if os.path.exists(SOUND_DIRECTORY) else []
     })
@@ -478,7 +544,7 @@ def api_config():
     Zapisuje TYLKO zmienione pola do lokalnego config.json — nie zaœmieca go
     pe³nym mergem, wiêc locations/ pozostaje Ÿród³em prawdy dla reszty."""
     global SUNDAY_INVERTED, STORE_NAME, config, _last_trade_check
-    global ANNOUNCEMENT_VOLUME, DUCK_VOLUME, RESTORE_VOLUME, _manual_muted
+    global ANNOUNCEMENT_VOLUME, DUCK_VOLUME, RESTORE_VOLUME, _manual_muted, HIDDEN_BUTTONS
 
     if request.method == 'POST':
         data = request.get_json()
@@ -523,6 +589,11 @@ def api_config():
         if "manual_mute" in data:
             _manual_muted = bool(data["manual_mute"])
             updates["manual_mute"] = _manual_muted
+
+        if "hidden_buttons" in data:
+            valid = {b["file"] for b in BUTTONS}
+            HIDDEN_BUTTONS = [f for f in data["hidden_buttons"] if f in valid]
+            updates["hidden_buttons"] = HIDDEN_BUTTONS
 
         # Zapisz tylko zmienione pola do LOKALNEGO config.json
         try:
@@ -610,7 +681,8 @@ def api_test_sound():
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    visible = [b for b in BUTTONS if b["file"] not in HIDDEN_BUTTONS]
+    return render_template('index.html', buttons=visible)
 
 
 @app.route('/tablet')
@@ -620,7 +692,7 @@ def index_tablet():
 
 @app.route('/admin')
 def admin_page():
-    return render_template('admin.html')
+    return render_template('admin.html', buttons=BUTTONS, hidden=HIDDEN_BUTTONS)
 
 
 # === START ===
@@ -632,6 +704,13 @@ if __name__ == '__main__':
         set_all_sessions_volume(RESTORE_VOLUME, exclude_names=exclude)
     except Exception as e:
         print(f"❌ B³¹d przy ustawianiu g³oœnoœci przy starcie: {e}")
+
+    # Most audio przy starcie (najczęstsza przyczyna ciszy = zgubione "Nasłuchuj"
+    # po restarcie komputera). Bezczynne na sklepach bez klucza audio_bridge.
+    ensure_audio_bridge()
+    if AUDIO_BRIDGE:
+        threading.Thread(target=audio_bridge_loop, daemon=True).start()
+        print("🔊 Most audio aktywny (Nasłuchuj tego urządzenia pilnowany)")
 
     # SprawdŸ dzieñ handlowy
     check_trade_day()

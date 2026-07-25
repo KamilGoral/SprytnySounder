@@ -270,6 +270,12 @@
       else if (s.muted) add('Wyciszony (dzień wolny)', 'off');
       else add('Aktywny');
       if (s.trade_info && s.trade_info.reason) add(s.trade_info.reason, 'neutral');
+      if (s.quiet_from) add('Cisza nocna ' + s.quiet_from + '–' + s.quiet_to, 'neutral');
+      if (s.mute_reason) add('Teraz nie gra: ' + s.mute_reason, 'off');
+      // Zła strefa czasowa = cisza nocna zadziała o złej godzinie (czas letni/zimowy)
+      if (s.clock && !s.clock.ok) add('Zła strefa czasowa: ' + s.clock.tz + ' — sprawdź zegar Windows', 'off');
+      // Monit: obsługa restartuje komputer, bo znowu nie grało
+      if (s.restarts_24h >= 2) add('Restarty komputera: ' + s.restarts_24h + ' w dobę, ' + s.restarts_7d + ' w tydzień', 'off');
     }
 
     async function load() {

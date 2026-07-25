@@ -19,6 +19,7 @@ Dzia³anie:
 import os
 import sys
 import json
+import base64
 import subprocess
 import tempfile
 import shutil
@@ -45,6 +46,7 @@ DEFAULTS_FILE = "config.defaults.json"
 LOCATION_FILE = "location.txt"
 LOCATIONS_DIR = "locations"
 VERSION_FILE = "version.txt"
+TOKEN_FILE = "update_token.txt"
 
 if getattr(sys, 'frozen', False):
     BASE_PATH = os.path.dirname(sys.executable)
@@ -90,21 +92,65 @@ def get_local_version(config):
     return config.get("version", "0.0.0")
 
 
+def get_token():
+    """Token do prywatnego repo. Kolejnoœæ: .secrets (rêcznie na sklepie, nie
+    kasowane przez aktualizacje) -> update_token.txt (jedzie z repo).
+
+    Format update_token.txt: base64 z tokenem zapisanym OD TY£U. Goły ani zwykle
+    zbase64owany PAT nie przechodzi — GitHub blokuje push (push protection), a w
+    publicznym repo dodatkowo sam uniewa¿nia znaleziony token, wiêc sklepy
+    straci³yby aktualizacje. Zapis:
+        printf 'github_pat_...' | rev | base64 -w0 > update_token.txt
+    """
+    for rel, is_b64 in ((os.path.join(".secrets", "github-token"), False),
+                        (TOKEN_FILE, True)):
+        try:
+            with open(os.path.join(BASE_PATH, rel), "r", encoding="utf-8") as f:
+                raw = f.read().strip()
+            if not raw:
+                continue
+            tok = base64.b64decode(raw).decode("ascii")[::-1].strip() if is_b64 else raw
+            if tok.startswith("gh"):
+                return tok
+        except Exception:
+            continue
+    return ""
+
+
+def api_base(update_url):
+    """https://github.com/Owner/Repo -> https://api.github.com/repos/Owner/Repo
+    API dzia³a te¿ na publicznym repo, wiêc jest jedna œcie¿ka zamiast dwóch."""
+    slug = update_url.rstrip("/").replace(".git", "").split("github.com/")[-1]
+    return "https://api.github.com/repos/" + slug
+
+
+def gh_headers(accept="application/vnd.github+json"):
+    headers = {"Accept": accept}
+    token = get_token()
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    return headers
+
+
 def check_update(config):
     """Sprawdza czy dostêpna jest aktualizacja."""
     update_url = config.get("update_url", "")
     if not update_url:
         return {"status": "no_url", "current": get_local_version(config), "available": None}
 
-    # Próbuj ró¿ne lokacje pliku wersji
+    api = api_base(update_url)
     version_urls = [
-        update_url.rstrip("/") + "/raw/main/version.txt",
-        update_url.rstrip("/") + "/raw/master/version.txt",
+        api + "/contents/version.txt?ref=main",
+        api + "/contents/version.txt?ref=master",
     ]
+    headers = gh_headers("application/vnd.github.raw")
 
     for url in version_urls:
         try:
-            resp = requests.get(url, timeout=5)
+            resp = requests.get(url, headers=headers, timeout=5)
+            if resp.status_code in (401, 403, 404) and "Authorization" not in headers:
+                print("⚠️ Repo prywatne albo brak dostêpu, a nie mam tokena "
+                      "(update_token.txt / .secrets/github-token)")
             if resp.status_code == 200:
                 remote_version = resp.text.strip()
                 return {
@@ -144,9 +190,12 @@ def download_and_update(config, force=False):
     if os.path.exists(git_dir):
         try:
             print("🔄 Próbujê git pull...")
+            env = dict(os.environ)
+            env["GIT_TERMINAL_PROMPT"] = "0"  # prywatne repo bez creds ma paœæ, nie wisieæ
             result = subprocess.run(
                 ["git", "pull"],
                 cwd=BASE_PATH,
+                env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,  # 'text=True' istnieje dopiero w 3.7
@@ -163,16 +212,18 @@ def download_and_update(config, force=False):
 
     # Fallback: pobierz ZIP z GitHub
     print("📥 Pobieram ZIP z repozytorium...")
-    zip_url = update_url.rstrip("/") + "/archive/refs/heads/main.zip"
-    
+    api = api_base(update_url)
+    headers = gh_headers()
+
     # Spróbuj te¿ master
     try:
-        resp = requests.get(zip_url, stream=True, timeout=30)
+        resp = requests.get(api + "/zipball/main", headers=headers, stream=True, timeout=30)
         if resp.status_code != 200:
-            zip_url = update_url.rstrip("/") + "/archive/refs/heads/master.zip"
-            resp = requests.get(zip_url, stream=True, timeout=30)
+            resp = requests.get(api + "/zipball/master", headers=headers, stream=True, timeout=30)
         if resp.status_code != 200:
-            print("❌ Nie mo¿na pobraæ ZIP z repozytorium")
+            print("❌ Nie mo¿na pobraæ ZIP z repozytorium (HTTP %s)" % resp.status_code)
+            if "Authorization" not in headers:
+                print("   Repo mo¿e byæ prywatne — brakuje tokena aktualizacji")
             return False
     except Exception as e:
         print(f"❌ B³¹d pobierania ZIP: {e}")

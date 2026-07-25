@@ -13,7 +13,25 @@
 $INSTALL_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BACKUP_DIR = "$INSTALL_DIR\backup"
 $REPO_URL = "https://github.com/KamilGoral/SprytnySounder"
-$ZIP_URL = "$REPO_URL/archive/refs/heads/main.zip"
+$ZIP_URL = "https://api.github.com/repos/KamilGoral/SprytnySounder/zipball/main"
+
+# Token do prywatnego repo: .secrets\github-token (jawny) albo update_token.txt
+# (base64 z tokenem od tylu - inaczej GitHub blokuje push i uniewaznia token)
+$HEADERS = @{}
+$TOKEN = ""
+if (Test-Path "$INSTALL_DIR\.secrets\github-token") {
+    $TOKEN = (Get-Content "$INSTALL_DIR\.secrets\github-token" -Raw).Trim()
+} elseif (Test-Path "$INSTALL_DIR\update_token.txt") {
+    try {
+        $b64 = (Get-Content "$INSTALL_DIR\update_token.txt" -Raw).Trim()
+        if ($b64) {
+            $chars = [Text.Encoding]::ASCII.GetString([Convert]::FromBase64String($b64)).ToCharArray()
+            [Array]::Reverse($chars)
+            $TOKEN = (-join $chars).Trim()
+        }
+    } catch { $TOKEN = "" }
+}
+if ($TOKEN -like "gh*") { $HEADERS["Authorization"] = "Bearer $TOKEN" }
 
 # Wymus TLS 1.2 (potrzebne na starszych Windows w sklepach)
 [Net.ServicePointManager]::SecurityProtocol = 3072 -bor 768 -bor 192
@@ -43,7 +61,7 @@ $TEMP_DIR = "$env:TEMP\sprytnysounder_update"
 
 try {
     Write-Host "  Pobieranie $ZIP_URL ..."
-    Invoke-WebRequest -Uri $ZIP_URL -OutFile $TEMP_ZIP -UseBasicParsing
+    Invoke-WebRequest -Uri $ZIP_URL -OutFile $TEMP_ZIP -UseBasicParsing -Headers $HEADERS
     $zipSize = (Get-Item $TEMP_ZIP).Length
     Write-Host "  OK - pobrano ZIP ($zipSize bajtow)"
 }

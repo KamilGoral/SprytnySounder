@@ -37,6 +37,12 @@ System komunikatów głosowych na salę sprzedaży dla sklepów spożywczych.
 System automatycznie wycisza się w:
 - Święta państwowe (Wielkanoc, Boże Narodzenie, Nowy Rok, etc.)
 - Niedziele niehandlowe (z możliwością odwrócenia flagą `sunday_inverted`)
+- Godziny nocne: domyślnie od `quiet_from` (22:00) do `quiet_to` (05:30), czas lokalny maszyny
+
+Cisza nocna liczy się na żądanie z zegara Windows, więc czas letni/zimowy zmienia się
+sam razem z systemem. Jeśli maszyna ma ustawioną złą strefę czasową, panel `/admin`
+pokazuje ostrzeżenie, a `log.txt` dostaje wpis przy starcie — wtedy cisza wypada o złej
+godzinie. Godziny zmienia się per placówka w `locations/<nazwa>.json`.
 
 ## Dodawanie nowych komunikatów
 

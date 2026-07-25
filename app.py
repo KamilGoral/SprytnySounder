@@ -27,6 +27,7 @@ import requests
 
 # === W³asne modu³y ===
 from poland_holidays import is_trade_day, get_trade_info
+from czas import hm_to_minutes, in_quiet_hours, clock_info, clock_summary
 
 # === Konfiguracja ===
 # Warstwy (każda nadpisuje poprzednią):
@@ -112,6 +113,11 @@ ANNOUNCEMENT_VOLUME = int(config.get("announcement_volume", 100))  # głośnoś�
 DUCK_VOLUME = int(config.get("duck_volume", 5))                    # tło PODCZAS komunikatu (%)
 RESTORE_VOLUME = int(config.get("restore_volume", 33))            # tło PO komunikacie (%)
 
+# Cisza nocna — sklep milknie o QUIET_FROM i wraca o QUIET_TO (czas lokalny maszyny).
+# Reguły dni handlowych obowiązują nadal: w niedzielę niehandlową cisza trwa całą dobę.
+QUIET_FROM = str(config.get("quiet_from", "22:00"))
+QUIET_TO = str(config.get("quiet_to", "05:30"))
+
 # Katalog przycisków — JEDNO źródło prawdy (panel /admin + widok /). Kolejność = układ.
 # Widoczność per placówka: HIDDEN_BUTTONS (lista plików) w lokalnym config.json,
 # przełączana z /admin — sklep bez 3 kas / bez samoobsługi chowa u siebie zbędne.
@@ -158,11 +164,81 @@ _last_trade_result = None
 _play_lock = threading.Lock()  # jeden komunikat naraz (mixer nie jest thread-safe)
 
 
+def log_line(text):
+    """Dopisuje liniê do log.txt (start, blokady, b³êdy) — bez tego jedynym œladem
+    by³ ekran konsoli, którego na sklepie nikt nie widzi."""
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as log_file:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            log_file.write(f"{timestamp} - {text}\n")
+    except Exception:
+        pass
+
+
 def log_event(filename):
     """Zapisuje zdarzenie do loga."""
-    with open(LOG_FILE, "a", encoding="utf-8") as log_file:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_file.write(f"{timestamp} - Odtworzono plik: {filename}\n")
+    log_line(f"Odtworzono plik: {filename}")
+
+
+QUIET_FROM_MIN = hm_to_minutes(QUIET_FROM, 22 * 60)
+QUIET_TO_MIN = hm_to_minutes(QUIET_TO, 5 * 60 + 30)
+
+
+def count_log_starts(hours):
+    """Ile razy aplikacja startowa³a w ostatnich N godzinach (z log.txt).
+    Ka¿dy w³¹cz/wy³¹cz komputera przez obs³ugê = jeden START, wiêc to nasz licznik
+    zg³oszeñ 'znowu nie gra³o'."""
+    if not os.path.exists(LOG_FILE):
+        return 0
+    limit = datetime.now() - timedelta(hours=hours)
+    count = 0
+    try:
+        with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+            for line in f.readlines()[-5000:]:
+                if " - START " not in line:
+                    continue
+                try:
+                    stamp = datetime.strptime(line[:19], "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    continue
+                if stamp >= limit:
+                    count += 1
+    except Exception:
+        return 0
+    return count
+
+
+def heartbeat_loop():
+    """Co godzinê wpis do log.txt. Dziêki temu widaæ, czy nad ranem aplikacja ¿y³a
+    (wtedy cisza jest po stronie Windows/audio), czy ju¿ jej nie by³o (wtedy po
+    stronie aplikacji). £apie te¿ uœpienie maszyny i zmianê czasu — d³ugoœæ drzemki
+    inna ni¿ godzina oznacza, ¿e zegar albo komputer zrobi³ coœ w nocy."""
+    step = 3600
+    last = time.time()
+    while True:
+        time.sleep(step)
+        now = time.time()
+        drift_min = int(round((now - last - step) / 60.0))
+        last = now
+        if abs(drift_min) >= 5:
+            log_line(f"Przeskok zegara albo uœpienie maszyny: {drift_min:+d} min "
+                     f"({clock_summary()})")
+        log_line(f"¯yje — {mute_reason() or 'gra'}")
+
+
+def mute_reason(now=None):
+    """JEDYNE miejsce decyduj¹ce, czy wolno graæ. Zwraca powód blokady albo None.
+    Liczone na ¿¹danie — nie ma w¹tku ani flagi, która mog³aby zostaæ zawieszona
+    po pó³nocy w z³ym stanie."""
+    if _manual_muted:
+        return "wyciszenie rêczne (panel /admin)"
+    now = now or datetime.now()
+    if in_quiet_hours(now.hour * 60 + now.minute, QUIET_FROM_MIN, QUIET_TO_MIN):
+        return f"cisza nocna ({QUIET_FROM}-{QUIET_TO})"
+    trade_info = check_trade_day()
+    if not trade_info["is_trade_day"]:
+        return trade_info["reason"]
+    return None
 
 
 def update_stats(filename):
@@ -246,12 +322,10 @@ def play_sound_with_isolation(sound_path, force=False):
     chyba ¿e force=True (test z panelu /admin gra zawsze).
     """
     if not force:
-        if _manual_muted:
-            print("⛔ Blokada: rêczne wyciszenie — dŸwiêk nie zostanie odtworzony")
-            return
-        trade_info = check_trade_day()
-        if not trade_info["is_trade_day"]:
-            print(f"⛔ Blokada: {trade_info['reason']} — dŸwiêk nie zostanie odtworzony")
+        reason = mute_reason()
+        if reason:
+            print(f"⛔ Blokada: {reason} — dŸwiêk nie zostanie odtworzony")
+            log_line(f"Zablokowano ({reason}): {os.path.basename(sound_path)}")
             return
 
     own_name = os.path.basename(sys.executable).lower()
@@ -410,14 +484,10 @@ def play_sound_route():
     """Endpoint do uploadu i odtwarzania pliku dŸwiêkowego."""
     # SprawdŸ czy wolno graæ
     trade_info = check_trade_day()
-    if _manual_muted:
+    reason = mute_reason()
+    if reason:
         return jsonify({
-            "error": "System wyciszony rêcznie (panel /admin)",
-            "trade_info": trade_info
-        }), 423
-    if not trade_info["is_trade_day"]:
-        return jsonify({
-            "error": f"System wyciszony: {trade_info['reason']}",
+            "error": f"System wyciszony: {reason}",
             "trade_info": trade_info
         }), 423  # 423 Locked
 
@@ -453,14 +523,10 @@ def play_defined_sound():
     """Endpoint do odtwarzania zdefiniowanego dŸwiêku po nazwie pliku."""
     # SprawdŸ czy wolno graæ
     trade_info = check_trade_day()
-    if _manual_muted:
+    reason = mute_reason()
+    if reason:
         return jsonify({
-            "error": "System wyciszony rêcznie (panel /admin)",
-            "trade_info": trade_info
-        }), 423
-    if not trade_info["is_trade_day"]:
-        return jsonify({
-            "error": f"System wyciszony: {trade_info['reason']}",
+            "error": f"System wyciszony: {reason}",
             "trade_info": trade_info
         }), 423
 
@@ -518,6 +584,12 @@ def api_status():
         "store_name": STORE_NAME,
         "muted": _system_muted,
         "manual_mute": _manual_muted,
+        "mute_reason": mute_reason(),  # None = w tej chwili wolno graæ
+        "quiet_from": QUIET_FROM,
+        "quiet_to": QUIET_TO,
+        "clock": clock_info(),          # z³a strefa = cisza o z³ej godzinie
+        "restarts_24h": count_log_starts(24),
+        "restarts_7d": count_log_starts(24 * 7),
         "sunday_inverted": SUNDAY_INVERTED,
         "announcement_volume": ANNOUNCEMENT_VOLUME,
         "duck_volume": DUCK_VOLUME,
@@ -714,6 +786,14 @@ if __name__ == '__main__':
 
     # SprawdŸ dzieñ handlowy
     check_trade_day()
+    # Œlad w log.txt: po czym poznaæ, ¿e sklep restartowa³ maszynê i o której
+    starts_24h = count_log_starts(24)  # liczone PRZED dopisaniem naszego STARTU
+    log_line(f"START {STORE_NAME} v{VERSION} — cisza nocna {QUIET_FROM}-{QUIET_TO}, "
+             f"{clock_summary()}, stan: {mute_reason() or 'gra'}")
+    if starts_24h >= 1:
+        log_line(f"MONIT: to ju¿ {starts_24h + 1}. uruchomienie w ci¹gu doby — "
+                 f"obs³uga znowu restartowa³a komputer, problem z cisz¹ trwa")
+    threading.Thread(target=heartbeat_loop, daemon=True).start()
 
     # Start auto-updater w tle
     if UPDATE_ENABLED and UPDATE_URL:

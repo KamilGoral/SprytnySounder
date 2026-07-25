@@ -274,6 +274,16 @@
       if (s.mute_reason) add('Teraz nie gra: ' + s.mute_reason, 'off');
       // Zła strefa czasowa = cisza nocna zadziała o złej godzinie (czas letni/zimowy)
       if (s.clock && !s.clock.ok) add('Zła strefa czasowa: ' + s.clock.tz + ' — sprawdź zegar Windows', 'off');
+      // Wyjście audio: aplikacja steruje tylko sesjami, więc master/wyciszenie
+      // urządzenia to najczęstsza przyczyna ciszy na sali mimo działającego systemu
+      if (s.audio) {
+        if (s.audio.error) add('Nie można odczytać wyjścia audio', 'off');
+        else {
+          if (s.audio.muted) add('Wyjście audio wyciszone w Windows', 'off');
+          else if (s.audio.master !== null && s.audio.master < 20) add('Master wyjścia tylko ' + s.audio.master + '%', 'off');
+          if (s.audio.device) add('Wyjście: ' + s.audio.device, 'neutral');
+        }
+      }
       // Monit: obsługa restartuje komputer, bo znowu nie grało
       if (s.restarts_24h >= 2) add('Restarty komputera: ' + s.restarts_24h + ' w dobę, ' + s.restarts_7d + ' w tydzień', 'off');
     }

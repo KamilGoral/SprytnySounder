@@ -20,6 +20,14 @@ import sys
 import json
 from datetime import datetime, timedelta
 from pycaw.pycaw import AudioUtilities
+# Master urządzenia (nie sesji) — starsze pycaw na sklepach może tego nie mieć,
+# wtedy diagnostyka po prostu poda mniej, zamiast wywalić aplikację.
+try:
+    from pycaw.pycaw import IAudioEndpointVolume
+    from comtypes import CLSCTX_ALL
+except Exception:
+    IAudioEndpointVolume = None
+    CLSCTX_ALL = None
 from flask_cors import CORS
 import pygame
 import pythoncom
@@ -184,6 +192,57 @@ QUIET_FROM_MIN = hm_to_minutes(QUIET_FROM, 22 * 60)
 QUIET_TO_MIN = hm_to_minutes(QUIET_TO, 5 * 60 + 30)
 
 
+def audio_snapshot(with_device_name=True):
+    """Stan WYJŒCIA audio Windows: domyœlne urz¹dzenie, master, wyciszenie, liczba sesji.
+
+    Aplikacja steruje tylko g³oœnoœci¹ sesji — zjechany master urz¹dzenia albo
+    podmiana domyœlnego wyjœcia (np. znika CABLE i wchodzi Realtek) daj¹ ciszê na
+    sali, której z kodu nie widaæ. Bez tego wpisu nie da siê zdalnie odró¿niæ
+    'aplikacja nie zagra³a' od 'zagra³a w z³e urz¹dzenie'.
+    Diagnostyka nigdy nie mo¿e wywaliæ odtwarzania — st¹d wszystko w try."""
+    info = {"device": None, "master": None, "muted": None, "sessions": None}
+    try:
+        pythoncom.CoInitialize()
+        speakers = AudioUtilities.GetSpeakers()
+
+        if with_device_name:
+            try:
+                device_id = speakers.GetId()
+                for dev in AudioUtilities.GetAllDevices():
+                    if getattr(dev, "id", None) == device_id:
+                        info["device"] = dev.FriendlyName
+                        break
+            except Exception:
+                pass
+
+        if IAudioEndpointVolume is not None:
+            endpoint = speakers.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+            master = endpoint.QueryInterface(IAudioEndpointVolume)
+            info["master"] = int(round(master.GetMasterVolumeLevelScalar() * 100))
+            info["muted"] = bool(master.GetMute())
+
+        info["sessions"] = len([s for s in AudioUtilities.GetAllSessions() if s.Process])
+    except Exception as e:
+        info["error"] = str(e)
+    return info
+
+
+def audio_summary(info=None):
+    """Jedno zdanie do log.txt — po nim widaæ, czy w nocy zmieni³o siê wyjœcie audio."""
+    i = audio_snapshot() if info is None else info
+    if i.get("error"):
+        return f"audio: nie uda³o siê odczytaæ ({i['error']})"
+    parts = []
+    if i.get("device"):
+        parts.append(f"wyjœcie: {i['device']}")
+    if i.get("master") is not None:
+        parts.append(f"master {i['master']}%")
+        parts.append("URZ¥DZENIE WYCISZONE" if i["muted"] else "niewyciszone")
+    if i.get("sessions") is not None:
+        parts.append(f"sesji: {i['sessions']}")
+    return ", ".join(parts) if parts else "audio: brak danych"
+
+
 def count_log_starts(hours):
     """Ile razy aplikacja startowa³a w ostatnich N godzinach (z log.txt).
     Ka¿dy w³¹cz/wy³¹cz komputera przez obs³ugê = jeden START, wiêc to nasz licznik
@@ -223,7 +282,7 @@ def heartbeat_loop():
         if abs(drift_min) >= 5:
             log_line(f"Przeskok zegara albo uœpienie maszyny: {drift_min:+d} min "
                      f"({clock_summary()})")
-        log_line(f"¯yje — {mute_reason() or 'gra'}")
+        log_line(f"¯yje — {mute_reason() or 'gra'} — {audio_summary()}")
 
 
 def mute_reason(now=None):
@@ -346,11 +405,18 @@ def play_sound_with_isolation(sound_path, force=False):
                 play_single_sound(warmup_path)
                 time.sleep(0.1)
 
-            # W³aœciwy komunikat
+            # W³aœciwy komunikat. Mierzymy czas: gdy urz¹dzenie jest martwe, pygame
+            # koñczy "odtwarzanie" w u³amku sekundy — w logu widaæ to od razu.
+            started = time.time()
             play_single_sound(sound_path)
+            played = time.time() - started
+            log_line(f"Zagrano {os.path.basename(sound_path)} w {played:.1f} s — "
+                     f"{audio_summary(audio_snapshot(with_device_name=False))}")
 
         except Exception as e:
             print(f"❌ B³¹d odtwarzania: {e}")
+            log_line(f"B£¥D odtwarzania {os.path.basename(sound_path)}: {e} — "
+                     f"{audio_summary()}")
         finally:
             # Przywróæ g³oœnoœæ t³a ZAWSZE — inaczej b³¹d odtwarzania
             # zostawia³ radio œciszone do DUCK_VOLUME a¿ do restartu komputera
@@ -588,6 +654,7 @@ def api_status():
         "quiet_from": QUIET_FROM,
         "quiet_to": QUIET_TO,
         "clock": clock_info(),          # z³a strefa = cisza o z³ej godzinie
+        "audio": audio_snapshot(),      # domyœlne wyjœcie + master (aplikacja rusza tylko sesje)
         "restarts_24h": count_log_starts(24),
         "restarts_7d": count_log_starts(24 * 7),
         "sunday_inverted": SUNDAY_INVERTED,
@@ -789,7 +856,7 @@ if __name__ == '__main__':
     # Œlad w log.txt: po czym poznaæ, ¿e sklep restartowa³ maszynê i o której
     starts_24h = count_log_starts(24)  # liczone PRZED dopisaniem naszego STARTU
     log_line(f"START {STORE_NAME} v{VERSION} — cisza nocna {QUIET_FROM}-{QUIET_TO}, "
-             f"{clock_summary()}, stan: {mute_reason() or 'gra'}")
+             f"{clock_summary()}, stan: {mute_reason() or 'gra'}, {audio_summary()}")
     if starts_24h >= 1:
         log_line(f"MONIT: to ju¿ {starts_24h + 1}. uruchomienie w ci¹gu doby — "
                  f"obs³uga znowu restartowa³a komputer, problem z cisz¹ trwa")

@@ -31,7 +31,8 @@ if (Test-Path "$INSTALL_DIR\.secrets\github-token") {
         }
     } catch { $TOKEN = "" }
 }
-if ($TOKEN -like "gh*") { $HEADERS["Authorization"] = "Bearer $TOKEN" }
+# 'github_pat_' NIE pasuje do wzorca 'gh*' - stad dwa warunki
+if ($TOKEN -like "github_pat_*" -or $TOKEN -like "gh?_*") { $HEADERS["Authorization"] = "Bearer $TOKEN" }
 
 # Wymus TLS 1.2 (potrzebne na starszych Windows w sklepach)
 [Net.ServicePointManager]::SecurityProtocol = 3072 -bor 768 -bor 192

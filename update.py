@@ -92,6 +92,14 @@ def get_local_version(config):
     return config.get("version", "0.0.0")
 
 
+def looks_like_token(value):
+    """Czy to wygl¹da na token GitHuba. UWAGA: fine-grained 'github_pat_...' NIE
+    zaczyna siê od 'gh' (tylko klasyczne 'ghp_', 'gho_'...), wiêc skrót w postaci
+    startswith('gh') po cichu odrzuca³ prawid³owy token i sklep szed³ anonimowo —
+    na publicznym repo tego nie widaæ, na prywatnym to koniec aktualizacji."""
+    return str(value).startswith(("github_pat_", "ghp_", "gho_", "ghs_", "ghu_", "ghr_"))
+
+
 def get_token():
     """Token do prywatnego repo. Kolejnoœæ: .secrets (rêcznie na sklepie, nie
     kasowane przez aktualizacje) -> update_token.txt (jedzie z repo).
@@ -110,7 +118,7 @@ def get_token():
             if not raw:
                 continue
             tok = base64.b64decode(raw).decode("ascii")[::-1].strip() if is_b64 else raw
-            if tok.startswith("gh"):
+            if looks_like_token(tok):
                 return tok
         except Exception:
             continue

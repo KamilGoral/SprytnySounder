@@ -89,13 +89,15 @@ def get_trade_sundays(year):
     palm_sunday = easter_date - datetime.timedelta(days=7)
     trade_sundays.append(palm_sunday)
 
-    # 2 niedziele przed Bo¿ym Narodzeniem
-    christmas = datetime.date(year, 12, 25)
-    for i in range(2):
-        advent_sunday = christmas - datetime.timedelta(days=7 * (i + 1))
-        while advent_sunday.weekday() != 6:
-            advent_sunday -= datetime.timedelta(days=1)
-        trade_sundays.append(advent_sunday)
+    # 2 niedziele przed Bo¿ym Narodzeniem: bierzemy ostatni¹ niedzielê PRZED 25.12
+    # i cofamy siê o tydzieñ. Odejmowanie 7 i 14 dni od 25.12 gubi³o jedn¹ niedzielê
+    # (2026: wychodzi³o 6 i 13 grudnia zamiast 13 i 20, 2025: 7 i 14 zamiast 14 i 21),
+    # wiêc sklep milk³ w najwiêkszy handlowy dzieñ roku.
+    last_sunday = datetime.date(year, 12, 24)
+    while last_sunday.weekday() != 6:
+        last_sunday -= datetime.timedelta(days=1)
+    trade_sundays.append(last_sunday)
+    trade_sundays.append(last_sunday - datetime.timedelta(days=7))
 
     return sorted(set(trade_sundays))
 

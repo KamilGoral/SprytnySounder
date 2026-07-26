@@ -221,7 +221,20 @@ def audio_snapshot(with_device_name=True):
             info["master"] = int(round(master.GetMasterVolumeLevelScalar() * 100))
             info["muted"] = bool(master.GetMute())
 
-        info["sessions"] = len([s for s in AudioUtilities.GetAllSessions() if s.Process])
+        # Nazwy i głośności sesji — bez nich nie da się zdalnie sprawdzić, czy radio
+        # naprawdę zostało ściszone (aplikacja rusza sesje, nie master urządzenia).
+        names = []
+        for s in AudioUtilities.GetAllSessions():
+            if not s.Process:
+                continue
+            try:
+                names.append("{} {}%".format(
+                    s.Process.name(),
+                    int(round(s.SimpleAudioVolume.GetMasterVolume() * 100))))
+            except Exception:
+                continue
+        info["sessions"] = len(names)
+        info["session_list"] = names
     except Exception as e:
         info["error"] = str(e)
     return info
@@ -238,7 +251,9 @@ def audio_summary(info=None):
     if i.get("master") is not None:
         parts.append(f"master {i['master']}%")
         parts.append("URZ¥DZENIE WYCISZONE" if i["muted"] else "niewyciszone")
-    if i.get("sessions") is not None:
+    if i.get("session_list"):
+        parts.append("sesje: " + ", ".join(i["session_list"]))
+    elif i.get("sessions") is not None:
         parts.append(f"sesji: {i['sessions']}")
     return ", ".join(parts) if parts else "audio: brak danych"
 
@@ -283,6 +298,35 @@ def heartbeat_loop():
             log_line(f"Przeskok zegara albo uœpienie maszyny: {drift_min:+d} min "
                      f"({clock_summary()})")
         log_line(f"¯yje — {mute_reason() or 'gra'} — {audio_summary()}")
+
+
+def background_mute_loop():
+    """Cisza na sali to nie tylko brak komunikatów — gdy sklep jest zamknięty
+    (niedziela niehandlowa, święto, cisza nocna, wyciszenie ręczne), radio też ma
+    milczeć. Do 1.5.5 blokada dotyczyła WYŁĄCZNIE komunikatów, więc w niedzielę
+    z głośników leciało tło ustawione ostatnim komunikatem w sobotę.
+
+    Wyciszenie wymuszamy co tick (a nie raz, na zmianie stanu), bo komunikat
+    zaczęty tuż przed 22:00 kończy się `set_all_sessions_volume(RESTORE_VOLUME)`
+    już w ciszy nocnej i podniósłby radio na całą noc. Przywracamy raz — żeby
+    obsługa mogła w ciągu dnia podgłośnić radio i nie walczyć z aplikacją."""
+    own = {os.path.basename(sys.executable).lower()}
+    was_muted = False  # przy starcie nie ruszamy głośności, dopóki nie wejdziemy w ciszę
+    while True:
+        muted = mute_reason() is not None
+        try:
+            if muted:
+                set_all_sessions_volume(0, exclude_names=own)
+            elif was_muted:
+                set_all_sessions_volume(RESTORE_VOLUME, exclude_names=own)
+            if muted != was_muted:
+                log_line("Tło na sali: {} ({})".format(
+                    "wyciszone" if muted else f"przywrócone {RESTORE_VOLUME}%",
+                    mute_reason() or "sklep otwarty"))
+            was_muted = muted
+        except Exception as e:
+            log_line(f"B£¥D wyciszania tła: {e}")  # bez zmiany was_muted = spróbuje znowu
+        time.sleep(30)
 
 
 def mute_reason(now=None):
@@ -861,6 +905,7 @@ if __name__ == '__main__':
         log_line(f"MONIT: to ju¿ {starts_24h + 1}. uruchomienie w ci¹gu doby — "
                  f"obs³uga znowu restartowa³a komputer, problem z cisz¹ trwa")
     threading.Thread(target=heartbeat_loop, daemon=True).start()
+    threading.Thread(target=background_mute_loop, daemon=True).start()
 
     # Start auto-updater w tle
     if UPDATE_ENABLED and UPDATE_URL:

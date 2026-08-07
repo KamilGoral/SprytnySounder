@@ -157,5 +157,64 @@
             });
         }
     </script>
+
+    {% if bony_enabled %}
+    <button id="bony-btn" onclick="toggleBony()">🎫 Pokaż bony</button>
+    <div id="bony-panel" hidden>
+        <div id="bony-lista">Ładowanie…</div>
+    </div>
+    <style>
+        #bony-btn { position: fixed; bottom: 10px; right: 10px; z-index: 10;
+            background: #FF9800; color: #fff; border: none; border-radius: 5px;
+            padding: 12px 18px; font-size: 20px; cursor: pointer; }
+        #bony-panel { position: fixed; bottom: 60px; right: 10px; z-index: 10;
+            width: min(420px, calc(100vw - 20px)); max-height: 70vh; overflow-y: auto;
+            background: #fff; border: 2px solid #FF9800; border-radius: 8px;
+            padding: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.25); }
+        .bon { border-bottom: 1px solid #eee; padding: 8px 4px; }
+        .bon.swiezy { background: #FFF3E0; }
+        .bon .numer { font-size: 22px; font-weight: bold; font-family: monospace;
+            word-break: break-all; }
+        .bon .meta { font-size: 16px; color: #555; }
+        .bony-naglowek { font-size: 14px; font-weight: bold; color: #E65100;
+            margin: 6px 0 2px; }
+    </style>
+    <script>
+        let bonyTimer = null;
+        function toggleBony() {
+            const p = document.getElementById('bony-panel');
+            p.hidden = !p.hidden;
+            if (!p.hidden) { odswiezBony(); bonyTimer = setInterval(odswiezBony, 30000); }
+            else { clearInterval(bonyTimer); }
+        }
+        async function odswiezBony() {
+            const el = document.getElementById('bony-lista');
+            try {
+                const r = await fetch('/api/bony');
+                const d = await r.json();
+                if (!r.ok) { el.textContent = d.error || 'Błąd'; return; }
+                if (!d.bony.length) {
+                    el.textContent = 'Brak niezrealizowanych bonów z ostatnich 2 godzin.';
+                    return;
+                }
+                const wiersz = b => `<div class="bon ${b.ostatnie15min ? 'swiezy' : ''}">
+                        <div class="numer">${b.numer}</div>
+                        <div class="meta">${(b.kwota_gr / 100).toFixed(2).replace('.', ',')} zł
+                            &middot; wydany ${new Date(b.wydano_ts).toLocaleTimeString('pl-PL',
+                                {hour: '2-digit', minute: '2-digit'})}</div>
+                    </div>`;
+                const swieze = d.bony.filter(b => b.ostatnie15min);
+                const starsze = d.bony.filter(b => !b.ostatnie15min);
+                el.innerHTML =
+                    (swieze.length ? '<div class="bony-naglowek">OSTATNIE 15 MINUT</div>'
+                        + swieze.map(wiersz).join('') : '')
+                    + (starsze.length ? '<div class="bony-naglowek">Wcześniej (do 2 h)</div>'
+                        + starsze.map(wiersz).join('') : '');
+                if (d.stan === 'blad') el.innerHTML =
+                    '<div class="bony-naglowek">⚠ dane mogą być nieaktualne</div>' + el.innerHTML;
+            } catch { el.textContent = 'Brak połączenia z bonami.'; }
+        }
+    </script>
+    {% endif %}
 </body>
 </html>

@@ -116,6 +116,12 @@ UPDATE_URL = config.get("update_url", "")
 UPDATE_INTERVAL = config.get("update_check_interval_hours", 24)
 STORE_NAME = config.get("store_name", "SprytnySounder")
 
+# Bony kaucyjne — podgląd niezrealizowanych bonów ze zwrotomatu (serwis na Hetznerze).
+# bony_url siedzi w config.defaults.json; bony_token to sekret per sklep, TYLKO w
+# lokalnym config.json. Bez tokenu funkcja jest niewidoczna (przycisk się nie renderuje).
+BONY_URL = str(config.get("bony_url", "")).rstrip("/")
+BONY_TOKEN = config.get("bony_token", "")
+
 # Głośność (sterowane z panelu /admin, zapisywane do lokalnego config.json)
 ANNOUNCEMENT_VOLUME = int(config.get("announcement_volume", 100))  # głośność komunikatu (%)
 DUCK_VOLUME = int(config.get("duck_volume", 5))                    # tło PODCZAS komunikatu (%)
@@ -860,12 +866,26 @@ def api_test_sound():
     return jsonify({"status": "ok", "played_file": filename})
 
 
+@app.route('/api/bony', methods=['GET'])
+def bony_proxy():
+    """Proxy do serwisu bonów — token zostaje na serwerze sklepu, nie w przeglądarce."""
+    if not (BONY_URL and BONY_TOKEN):
+        return jsonify({"error": "Bony nieskonfigurowane"}), 404
+    try:
+        r = requests.get(f"{BONY_URL}/api/bony",
+                         headers={"X-Token": BONY_TOKEN}, timeout=5)
+        return r.text, r.status_code, {"Content-Type": "application/json"}
+    except requests.RequestException:
+        return jsonify({"error": "Brak połączenia z serwisem bonów"}), 502
+
+
 # === STRONY ===
 
 @app.route('/')
 def index():
     visible = [b for b in BUTTONS if b["file"] not in HIDDEN_BUTTONS]
-    return render_template('index.html', buttons=visible)
+    return render_template('index.html', buttons=visible,
+                           bony_enabled=bool(BONY_URL and BONY_TOKEN))
 
 
 @app.route('/tablet')

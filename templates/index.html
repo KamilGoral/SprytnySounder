@@ -56,6 +56,17 @@
             background-color: #ccc; /* Brak zmiany koloru przy hover */
         }
 
+        /* Kafelek bonów — link stylizowany jak przycisk, żółty dla odróżnienia */
+        .button.bony {
+            background-color: #FBC02D;
+            color: #212121;
+            text-decoration: none;
+        }
+
+        .button.bony:hover {
+            background-color: #F9A825;
+        }
+
         .button .icon {
             margin: 3rem; /* Zwiększony margines między ikoną a tekstem */
             font-size: 48px;
@@ -102,6 +113,12 @@
             <span class="text">{{ b.label }}</span>
         </button>
         {% endfor %}
+        {% if bony_enabled %}
+        <a class="button bony" href="/bony">
+            <i class="fas fa-receipt icon"></i>
+            <span class="text">Pokaż bony</span>
+        </a>
+        {% endif %}
     </div>
 
     <script>
@@ -158,13 +175,5 @@
         }
     </script>
 
-    {% if bony_enabled %}
-    <a id="bony-btn" href="/bony">🎫 Pokaż bony</a>
-    <style>
-        #bony-btn { position: fixed; bottom: 10px; right: 10px; z-index: 10;
-            background: #FF9800; color: #fff; border-radius: 5px; text-decoration: none;
-            padding: 12px 18px; font-size: 20px; cursor: pointer; }
-    </style>
-    {% endif %}
 </body>
 </html>

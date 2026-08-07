@@ -572,6 +572,19 @@ def run_update_now():
     return (after != before, before, after)
 
 
+def restart_self():
+    """
+    Restart procesu po aktualizacji. Na Windows os.exec* skleja argumenty
+    spacjami BEZ cudzys³owów, wiêc œcie¿ka typu "C:\\komunikaty glosowe\\app.py"
+    rozpada³a siê na dwa argumenty i restart zabija³ serwer (Kiliñskiego 1.6.6).
+    Popen cytuje poprawnie (list2cmdline); rodzic wychodzi przez os._exit.
+    """
+    if os.name == "nt":
+        subprocess.Popen([sys.executable] + sys.argv, cwd=BASE_PATH)
+        os._exit(0)
+    os.execl(sys.executable, sys.executable, *sys.argv)
+
+
 UPDATE_HOURS = (8, 10, 20, 22)  # o tych godzinach sklepy sprawdzaj¹ nowe wersje
 
 
@@ -597,7 +610,7 @@ def auto_update_loop():
             if changed:
                 # Restart TYLKO po realnej zmianie wersji -> brak pêtli restartów
                 print(f"[Auto-Update] Zaktualizowano {before} -> {after}, restartujê...")
-                os.execl(sys.executable, sys.executable, *sys.argv)
+                restart_self()
             else:
                 print(f"[Auto-Update] Aktualne ({after})")
         except Exception as e:
@@ -830,7 +843,7 @@ def api_check_update():
         # Restart po krótkiej chwili, ¿eby zd¹¿yæ odes³aæ odpowiedŸ do panelu
         def _restart():
             time.sleep(2)
-            os.execl(sys.executable, sys.executable, *sys.argv)
+            restart_self()
         threading.Thread(target=_restart, daemon=True).start()
         return jsonify({"status": "updated", "message": f"Zaktualizowano {before} → {after}. Restartujê…"})
 

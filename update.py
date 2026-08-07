@@ -287,6 +287,11 @@ def restart_app():
     time.sleep(1)
     python = sys.executable
     script = os.path.join(BASE_PATH, "app.py")
+    if os.name == "nt":
+        # os.exec* na Windows nie cytuje argumentów — œcie¿ka ze spacj¹
+        # (C:\komunikaty glosowe) rozpada siê i restart pada; Popen cytuje
+        subprocess.Popen([python, script], cwd=BASE_PATH)
+        os._exit(0)
     os.execl(python, python, script)
 
 

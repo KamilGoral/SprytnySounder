@@ -920,4 +920,6 @@ if __name__ == '__main__':
 
     # debug=False: reloader Werkzeuga potrafi³ zrestartowaæ proces w œrodku
     # komunikatu (gdy auto-update podmieni pliki) = radio zostaje œciszone
-    app.run(host=HOST, port=PORT, debug=False, threaded=False)
+    # threaded=True: odtwarzanie i tak serializuje _play_lock, a przy jednym
+    # watku kazde nacisniecie przycisku (join do 15 s) wieszalo caly serwer
+    app.run(host=HOST, port=PORT, debug=False, threaded=True)

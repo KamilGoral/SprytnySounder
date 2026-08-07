@@ -50,29 +50,33 @@
                     return;
                 }
                 if (!d.bony.length) {
-                    lista.innerHTML = '<div class="info">Brak niezrealizowanych bonów z ostatnich 2 godzin.</div>';
+                    lista.innerHTML = '<div class="info">Brak niezrealizowanych bonów z ostatnich 2 dni.</div>';
                     return;
                 }
+                const kiedy = ts => {
+                    const dt = new Date(ts);
+                    const czas = dt.toLocaleTimeString('pl-PL', {hour: '2-digit', minute: '2-digit'});
+                    return dt.toDateString() === new Date().toDateString()
+                        ? czas : `wczoraj ${czas}`;
+                };
                 const wiersz = b => `<div class="bon ${b.ostatnie15min ? 'swiezy' : ''}">
                         <div class="numer">${b.numer}</div>
                         <div class="meta">${(b.kwota_gr / 100).toFixed(2).replace('.', ',')} zł
-                            &middot; wydany ${new Date(b.wydano_ts).toLocaleTimeString('pl-PL',
-                                {hour: '2-digit', minute: '2-digit'})}</div>
+                            &middot; wydany ${kiedy(b.wydano_ts)}</div>
                     </div>`;
                 const swieze = d.bony.filter(b => b.ostatnie15min);
                 const starsze = d.bony.filter(b => !b.ostatnie15min);
                 lista.innerHTML =
                     (swieze.length ? '<div class="naglowek">OSTATNIE 15 MINUT</div>'
                         + swieze.map(wiersz).join('') : '')
-                    + (starsze.length ? '<div class="naglowek">Wcześniej (do 2 godzin)</div>'
+                    + (starsze.length ? '<div class="naglowek">Wcześniej (do 2 dni)</div>'
                         + starsze.map(wiersz).join('') : '');
             } catch {
                 pobrano.textContent = '';
                 lista.innerHTML = '<div class="info">Brak połączenia z serwisem bonów.</div>';
             }
         }
-        odswiezBony();
-        setInterval(odswiezBony, 30000);
+        odswiezBony();  // fetch tylko przy wejściu i po kliknięciu Odśwież
     </script>
 </body>
 </html>

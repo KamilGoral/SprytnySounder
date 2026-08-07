@@ -734,6 +734,7 @@ def api_config():
     pe³nym mergem, wiêc locations/ pozostaje Ÿród³em prawdy dla reszty."""
     global SUNDAY_INVERTED, STORE_NAME, config, _last_trade_check
     global ANNOUNCEMENT_VOLUME, DUCK_VOLUME, RESTORE_VOLUME, _manual_muted, HIDDEN_BUTTONS
+    global BONY_TOKEN
 
     if request.method == 'POST':
         data = request.get_json()
@@ -778,6 +779,11 @@ def api_config():
         if "manual_mute" in data:
             _manual_muted = bool(data["manual_mute"])
             updates["manual_mute"] = _manual_muted
+
+        if "bony_token" in data:
+            # Sekret per sklep — trafia do lokalnego config.json, działa bez restartu
+            BONY_TOKEN = str(data["bony_token"]).strip()
+            updates["bony_token"] = BONY_TOKEN
 
         if "hidden_buttons" in data:
             valid = {b["file"] for b in BUTTONS}

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bony kaucyjne — {{ store_name }}</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #f4f4f4; }
+        header { display: flex; align-items: center; gap: 10px; padding: 10px;
+            background: #FF9800; color: #fff; position: sticky; top: 0; }
+        header .tytul { flex-grow: 1; font-size: 22px; font-weight: bold; }
+        .hbtn { background: rgba(255,255,255,.25); border: none; color: #fff;
+            font-size: 22px; border-radius: 8px; padding: 10px 16px; cursor: pointer;
+            text-decoration: none; }
+        #pobrano { padding: 8px 14px; color: #555; font-size: 15px; }
+        #lista { padding: 0 10px 20px; }
+        .bon { background: #fff; border: 1px solid #ddd; border-radius: 8px;
+            padding: 12px; margin-bottom: 10px; }
+        .bon.swiezy { border-color: #FF9800; background: #FFF3E0; }
+        .bon .numer { font-size: 26px; font-weight: bold; font-family: monospace;
+            word-break: break-all; }
+        .bon .meta { font-size: 18px; color: #555; margin-top: 4px; }
+        .naglowek { font-size: 16px; font-weight: bold; color: #E65100;
+            margin: 14px 4px 8px; }
+        .info { padding: 30px 10px; text-align: center; font-size: 20px; color: #555; }
+    </style>
+</head>
+<body>
+    <header>
+        <a class="hbtn" href="/">⬅ Wróć</a>
+        <span class="tytul">🎫 Bony kaucyjne</span>
+        <button class="hbtn" onclick="odswiezBony()">🔄 Odśwież</button>
+    </header>
+    <div id="pobrano"></div>
+    <div id="lista"><div class="info">Ładowanie…</div></div>
+
+    <script>
+        async function odswiezBony() {
+            const lista = document.getElementById('lista');
+            const pobrano = document.getElementById('pobrano');
+            try {
+                const r = await fetch('/api/bony');
+                const d = await r.json();
+                pobrano.textContent = 'Pobrano z serwera: '
+                    + new Date().toLocaleTimeString('pl-PL')
+                    + (d.stan === 'blad' ? ' — ⚠ dane mogą być nieaktualne' : '');
+                if (!r.ok) {
+                    lista.innerHTML = `<div class="info">${d.error || 'Błąd'}</div>`;
+                    return;
+                }
+                if (!d.bony.length) {
+                    lista.innerHTML = '<div class="info">Brak niezrealizowanych bonów z ostatnich 2 godzin.</div>';
+                    return;
+                }
+                const wiersz = b => `<div class="bon ${b.ostatnie15min ? 'swiezy' : ''}">
+                        <div class="numer">${b.numer}</div>
+                        <div class="meta">${(b.kwota_gr / 100).toFixed(2).replace('.', ',')} zł
+                            &middot; wydany ${new Date(b.wydano_ts).toLocaleTimeString('pl-PL',
+                                {hour: '2-digit', minute: '2-digit'})}</div>
+                    </div>`;
+                const swieze = d.bony.filter(b => b.ostatnie15min);
+                const starsze = d.bony.filter(b => !b.ostatnie15min);
+                lista.innerHTML =
+                    (swieze.length ? '<div class="naglowek">OSTATNIE 15 MINUT</div>'
+                        + swieze.map(wiersz).join('') : '')
+                    + (starsze.length ? '<div class="naglowek">Wcześniej (do 2 godzin)</div>'
+                        + starsze.map(wiersz).join('') : '');
+            } catch {
+                pobrano.textContent = '';
+                lista.innerHTML = '<div class="info">Brak połączenia z serwisem bonów.</div>';
+            }
+        }
+        odswiezBony();
+        setInterval(odswiezBony, 30000);
+    </script>
+</body>
+</html>

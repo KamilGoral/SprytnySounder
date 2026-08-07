@@ -899,6 +899,13 @@ def index_tablet():
     return render_template('index-tablet.html')
 
 
+@app.route('/bony')
+def bony_page():
+    if not (BONY_URL and BONY_TOKEN):
+        return render_template('index.html', buttons=[b for b in BUTTONS if b["file"] not in HIDDEN_BUTTONS], bony_enabled=False)
+    return render_template('bony.html', store_name=STORE_NAME)
+
+
 @app.route('/admin')
 def admin_page():
     return render_template('admin.html', buttons=BUTTONS, hidden=HIDDEN_BUTTONS)

@@ -95,6 +95,7 @@ def load_config():
     # 3. Lokalne ustawienia maszyny (najwyższy priorytet). Stare sklepy mają tu pełny
     #    config.json, więc działają dokładnie jak dawniej (wsteczna zgodność).
     cfg.update(local_cfg)
+    cfg["_location"] = location
     return cfg
 
 config = load_config()
@@ -121,6 +122,18 @@ STORE_NAME = config.get("store_name", "SprytnySounder")
 # lokalnym config.json. Bez tokenu funkcja jest niewidoczna (przycisk się nie renderuje).
 BONY_URL = str(config.get("bony_url", "")).rstrip("/")
 BONY_TOKEN = config.get("bony_token", "")
+# Jednorazowy rozruch przez repo: mapa bony_tokens w defaults (klucz = lokalizacja).
+# Token utrwalamy w LOKALNYM config.json, żeby po usunięciu mapy z repo dalej działał.
+if not BONY_TOKEN:
+    BONY_TOKEN = (config.get("bony_tokens") or {}).get(config.get("_location", ""), "")
+    if BONY_TOKEN:
+        try:
+            _local = _read_json(CONFIG_FILE)
+            _local["bony_token"] = BONY_TOKEN
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(_local, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"⚠️ Nie udało się utrwalić bony_token: {e}")
 
 # Głośność (sterowane z panelu /admin, zapisywane do lokalnego config.json)
 ANNOUNCEMENT_VOLUME = int(config.get("announcement_volume", 100))  # głośność komunikatu (%)

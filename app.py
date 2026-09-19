@@ -31,7 +31,6 @@ except Exception:
 from flask_cors import CORS
 import pygame
 import pythoncom
-import requests
 
 # === W³asne modu³y ===
 from poland_holidays import is_trade_day, get_trade_info
@@ -116,24 +115,6 @@ UPDATE_ENABLED = config.get("update_enabled", True)
 UPDATE_URL = config.get("update_url", "")
 UPDATE_INTERVAL = config.get("update_check_interval_hours", 24)
 STORE_NAME = config.get("store_name", "SprytnySounder")
-
-# Bony kaucyjne — podgląd niezrealizowanych bonów ze zwrotomatu (serwis na Hetznerze).
-# bony_url siedzi w config.defaults.json; bony_token to sekret per sklep, TYLKO w
-# lokalnym config.json. Bez tokenu funkcja jest niewidoczna (przycisk się nie renderuje).
-BONY_URL = str(config.get("bony_url", "")).rstrip("/")
-BONY_TOKEN = config.get("bony_token", "")
-# Jednorazowy rozruch przez repo: mapa bony_tokens w defaults (klucz = lokalizacja).
-# Token utrwalamy w LOKALNYM config.json, żeby po usunięciu mapy z repo dalej działał.
-if not BONY_TOKEN:
-    BONY_TOKEN = (config.get("bony_tokens") or {}).get(config.get("_location", ""), "")
-    if BONY_TOKEN:
-        try:
-            _local = _read_json(CONFIG_FILE)
-            _local["bony_token"] = BONY_TOKEN
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(_local, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"⚠️ Nie udało się utrwalić bony_token: {e}")
 
 # Głośność (sterowane z panelu /admin, zapisywane do lokalnego config.json)
 ANNOUNCEMENT_VOLUME = int(config.get("announcement_volume", 100))  # głośność komunikatu (%)
@@ -336,8 +317,14 @@ def background_mute_loop():
         try:
             if muted:
                 set_all_sessions_volume(0, exclude_names=own)
-            elif was_muted:
-                set_all_sessions_volume(RESTORE_VOLUME, exclude_names=own)
+            else:
+                # Windows pamiêta g³oœnoœæ PER APLIKACJA. Radio zgaszone do 0%
+                # wczoraj o 22:00 wstaje dziœ rano nadal na 0% — a przywracanie
+                # tylko na zboczu wyciszone->otwarte tej sesji ju¿ nie ³apa³o
+                # (proces Chrome jest nowy). St¹d cisza na sali do pierwszego
+                # komunikatu. Podnosimy wiêc co tick, ale WY£¥CZNIE zera.
+                set_all_sessions_volume(RESTORE_VOLUME, exclude_names=own,
+                                        only_if_zero=True)
             if muted != was_muted:
                 log_line("Tło na sali: {} ({})".format(
                     "wyciszone" if muted else f"przywrócone {RESTORE_VOLUME}%",
@@ -379,16 +366,22 @@ def update_stats(filename):
             stats_file.write(f"{name}: {count}\n")
 
 
-def set_all_sessions_volume(target_volume, exclude_names=None):
-    """Ustawia g³oœnoœæ wszystkich sesji audio na podany poziom."""
+def set_all_sessions_volume(target_volume, exclude_names=None, only_if_zero=False):
+    """Ustawia g³oœnoœæ wszystkich sesji audio na podany poziom.
+    only_if_zero=True rusza TYLKO sesje wyciszone do zera — nie podbija radia,
+    które obs³uga sama œciszy³a w ci¹gu dnia."""
     pythoncom.CoInitialize()
     exclude_names = exclude_names or set()
     for session in AudioUtilities.GetAllSessions():
         if session.Process:
             try:
                 name = session.Process.name().lower()
-                if name not in exclude_names:
-                    session.SimpleAudioVolume.SetMasterVolume(target_volume / 100.0, None)
+                if name in exclude_names:
+                    continue
+                volume = session.SimpleAudioVolume
+                if only_if_zero and volume.GetMasterVolume() > 0.01:
+                    continue
+                volume.SetMasterVolume(target_volume / 100.0, None)
             except Exception:
                 continue
 
@@ -760,7 +753,6 @@ def api_config():
     pe³nym mergem, wiêc locations/ pozostaje Ÿród³em prawdy dla reszty."""
     global SUNDAY_INVERTED, STORE_NAME, config, _last_trade_check
     global ANNOUNCEMENT_VOLUME, DUCK_VOLUME, RESTORE_VOLUME, _manual_muted, HIDDEN_BUTTONS
-    global BONY_TOKEN
 
     if request.method == 'POST':
         data = request.get_json()
@@ -805,11 +797,6 @@ def api_config():
         if "manual_mute" in data:
             _manual_muted = bool(data["manual_mute"])
             updates["manual_mute"] = _manual_muted
-
-        if "bony_token" in data:
-            # Sekret per sklep — trafia do lokalnego config.json, działa bez restartu
-            BONY_TOKEN = str(data["bony_token"]).strip()
-            updates["bony_token"] = BONY_TOKEN
 
         if "hidden_buttons" in data:
             valid = {b["file"] for b in BUTTONS}
@@ -898,17 +885,24 @@ def api_test_sound():
     return jsonify({"status": "ok", "played_file": filename})
 
 
-@app.route('/api/bony', methods=['GET'])
-def bony_proxy():
-    """Proxy do serwisu bonów — token zostaje na serwerze sklepu, nie w przeglądarce."""
-    if not (BONY_URL and BONY_TOKEN):
-        return jsonify({"error": "Bony nieskonfigurowane"}), 404
+@app.route('/api/log', methods=['GET'])
+def api_log():
+    """Ogon log.txt jako czysty tekst. Bez tego jedynym sposobem na zobaczenie,
+    co siê dzia³o w nocy na sklepie, jest siedzenie przy tej maszynie — a do
+    czêœci sklepów nie ma zdalnego dostêpu. ?lines=N (domyœlnie 300)."""
     try:
-        r = requests.get(f"{BONY_URL}/api/bony",
-                         headers={"X-Token": BONY_TOKEN}, timeout=5)
-        return r.text, r.status_code, {"Content-Type": "application/json"}
-    except requests.RequestException:
-        return jsonify({"error": "Brak połączenia z serwisem bonów"}), 502
+        wanted = min(int(request.args.get("lines", 300)), 5000)
+    except (TypeError, ValueError):
+        wanted = 300
+    plain = {"Content-Type": "text/plain; charset=utf-8"}
+    if not os.path.exists(LOG_FILE):
+        # Œwie¿a instalacja — brak loga to nie awaria, 500 wygl¹da³oby jak zepsuta apka
+        return f"{LOG_FILE} jeszcze nie istnieje — apka nic dot¹d nie zapisa³a.", 200, plain
+    try:
+        with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+            return "".join(f.readlines()[-wanted:]), 200, plain
+    except Exception as e:
+        return f"Nie mo¿na odczytaæ {LOG_FILE}: {e}", 500, plain
 
 
 # === STRONY ===
@@ -916,20 +910,12 @@ def bony_proxy():
 @app.route('/')
 def index():
     visible = [b for b in BUTTONS if b["file"] not in HIDDEN_BUTTONS]
-    return render_template('index.html', buttons=visible,
-                           bony_enabled=bool(BONY_URL and BONY_TOKEN))
+    return render_template('index.html', buttons=visible)
 
 
 @app.route('/tablet')
 def index_tablet():
     return render_template('index-tablet.html')
-
-
-@app.route('/bony')
-def bony_page():
-    if not (BONY_URL and BONY_TOKEN):
-        return render_template('index.html', buttons=[b for b in BUTTONS if b["file"] not in HIDDEN_BUTTONS], bony_enabled=False)
-    return render_template('bony.html', store_name=STORE_NAME)
 
 
 @app.route('/admin')

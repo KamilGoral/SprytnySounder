@@ -5,7 +5,7 @@
   "stats_file": "statystyka.txt",
   "template_folder": "templates",
   "static_folder": "static",
-  "version": "1.6.8",
+  "version": "1.6.9",
   "update_enabled": true,
   "update_url": "https://github.com/KamilGoral/SprytnySounder",
   "update_check_interval_hours": 24,
@@ -16,6 +16,5 @@
   "announcement_volume": 100,
   "duck_volume": 5,
   "restore_volume": 33,
-  "manual_mute": false,
-  "bony_url": "https://sprytnypcmarket.pl/bony"
+  "manual_mute": false
 }

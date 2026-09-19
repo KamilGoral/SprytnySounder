@@ -3,17 +3,23 @@
 """Dopisuje location /sounder/ do bloku sprytnypcmarket.pl i sprawdza konfiguracje.
 
 Osobny skrypt, bo sed w cudzym pliku nginxa to proszenie sie o 502 na calej
-domenie. Tu: kopia zapasowa -> wstawka -> nginx -t -> reload; blad testu cofa
-plik do kopii. Idempotentny — drugi przebieg nic nie robi.
+domenie. Tu: kopia zapasowa (POZA sites-enabled!) -> wstawka -> nginx -t -> reload; blad
+testu cofa plik do kopii. Idempotentny — drugi przebieg nic nie robi.
 """
+import os
 import shutil
 import subprocess
 import sys
 import time
 
 PLIK = "/etc/nginx/sites-enabled/sprytnypcmarket.pl"
+# Kopia MUSI ladowac poza sites-enabled — nginx wczytuje stamtad kazdy plik, wiec
+# sprytnypcmarket.pl.bak-* to od razu "duplicate listen options" i zepsuty test.
+KOPIE = "/root/nginx-kopie"
 MARKER = "location /sounder/"
-KOTWICA = "    client_max_body_size 50m;\n"
+# Kotwica musi byc JEDNOZNACZNA: "client_max_body_size 50m;" wystepuje
+# dwa razy (blok serwera i location /api/upload), ten komentarz raz.
+KOTWICA = "    # Upload API - skip basic auth, allow large files\n"
 WPIS = """
     # SprytnySounder — skrzynka na logi ze sklepow (serwis na 127.0.0.1:3401).
     # TYLKO POST: sklepy maja tu dopisywac swoj log.txt, nikt z zewnatrz nie ma
@@ -39,9 +45,10 @@ if MARKER in tresc:
 if tresc.count(KOTWICA) != 1:
     sys.exit(f"nginx: nie znalazlem jednoznacznej kotwicy {KOTWICA!r} — przerywam")
 
-kopia = f"{PLIK}.bak-{int(time.time())}"
+os.makedirs(KOPIE, exist_ok=True)
+kopia = os.path.join(KOPIE, f"{os.path.basename(PLIK)}.bak-{int(time.time())}")
 shutil.copy2(PLIK, kopia)
-open(PLIK, "w", encoding="utf-8").write(tresc.replace(KOTWICA, KOTWICA + WPIS))
+open(PLIK, "w", encoding="utf-8").write(tresc.replace(KOTWICA, WPIS + KOTWICA))
 
 test = subprocess.run(["nginx", "-t"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                       universal_newlines=True)

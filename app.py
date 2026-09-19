@@ -31,6 +31,7 @@ except Exception:
 from flask_cors import CORS
 import pygame
 import pythoncom
+import requests
 
 # === W³asne modu³y ===
 from poland_holidays import is_trade_day, get_trade_info
@@ -115,6 +116,16 @@ UPDATE_ENABLED = config.get("update_enabled", True)
 UPDATE_URL = config.get("update_url", "")
 UPDATE_INTERVAL = config.get("update_check_interval_hours", 24)
 STORE_NAME = config.get("store_name", "SprytnySounder")
+LOCATION = config.get("_location", "")
+
+# Raport na serwer — sklepy siedz¹ za NAT-em w swoich LAN-ach, wiêc z zewn¹trz
+# nie da siê do nich wejœæ. To one wysy³aj¹ ogon log.txt i status na Hetznera,
+# a diagnoza dzieje siê z plików tam. Ruch idzie TYLKO w jedn¹ stronê: sklep
+# nic nie pobiera i niczego nie wykonuje, wiêc skrzynka na logi nigdy nie
+# stanie siê kana³em sterowania sklepem.
+REPORT_URL = str(config.get("report_url", "")).rstrip("/")
+REPORT_EVERY_MIN = int(config.get("report_interval_minutes", 60))
+REPORT_LINES = int(config.get("report_lines", 2000))
 
 # Głośność (sterowane z panelu /admin, zapisywane do lokalnego config.json)
 ANNOUNCEMENT_VOLUME = int(config.get("announcement_volume", 100))  # głośność komunikatu (%)
@@ -612,6 +623,62 @@ def auto_update_loop():
         time.sleep(_seconds_until_next_update_hour())
 
 
+# === RAPORT NA SERWER ===
+
+def _report_id():
+    """To¿samoœæ sklepu wobec skrzynki na logi: losowana RAZ i zapisywana do
+    lokalnego config.json. Repo jest PUBLICZNE, wiêc nie ma w nim ¿adnego
+    sekretu — serwer przypina identyfikator przy pierwszym raporcie danego
+    sklepu i od tej pory wymaga tego samego (TOFU)."""
+    ident = str(config.get("report_id", "")).strip()
+    if len(ident) >= 32:
+        return ident
+    ident = os.urandom(16).hex()
+    try:
+        local = _read_json(CONFIG_FILE)
+        local["report_id"] = ident
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(local, f, indent=2, ensure_ascii=False)
+        config["report_id"] = ident
+    except Exception as e:
+        print(f"⚠️ Nie uda³o siê zapisaæ report_id: {e}")
+        return ""  # bez trwa³ego id nie raportujemy — inaczej co restart nowy sklep
+    return ident
+
+
+def report_once():
+    """Wysy³a status i ogon log.txt. Cicho prze³yka b³êdy sieci — sklep ma graæ,
+    a nie walczyæ z internetem. Zwraca True, gdy serwer potwierdzi³."""
+    ident = _report_id()
+    if not (REPORT_URL and ident and LOCATION):
+        return False
+    tail = ""
+    try:
+        with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+            tail = "".join(f.readlines()[-REPORT_LINES:])
+    except Exception:
+        pass
+    try:
+        r = requests.post(REPORT_URL + "/raport",
+                          json={"sklep": LOCATION, "log": tail, "status": status_snapshot()},
+                          headers={"X-Sklep-Id": ident}, timeout=20)
+        return r.status_code == 200
+    except requests.RequestException:
+        return False
+
+
+def report_loop():
+    """Pêtla t³a. Pierwszy raport po minucie — ¿eby z³apaæ œwie¿y wpis START
+    (i MONIT, gdy obs³uga w³aœnie znowu restartowa³a komputer)."""
+    time.sleep(60)
+    while True:
+        try:
+            report_once()
+        except Exception as e:
+            print(f"[Raport] B³¹d: {e}")
+        time.sleep(max(5, REPORT_EVERY_MIN) * 60)
+
+
 # === ENDPOINTY API ===
 
 @app.route('/play-sound', methods=['POST'])
@@ -698,9 +765,9 @@ def play_defined_sound():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/status', methods=['GET'])
-def api_status():
-    """Zwraca pe³ny status systemu."""
+def status_snapshot():
+    """Pe³ny stan sklepu. Jedno Ÿród³o prawdy — /api/status i raport wysy³any na
+    serwer musz¹ pokazywaæ dok³adnie to samo, inaczej diagnoza zdalna k³amie."""
     trade_info = check_trade_day()
 
     # Statystyki
@@ -713,7 +780,7 @@ def api_status():
                     name, count = line.split(": ", 1)
                     stats[name] = int(count)
 
-    return jsonify({
+    return {
         "status": "running",
         "version": VERSION,
         "store_name": STORE_NAME,
@@ -735,7 +802,12 @@ def api_status():
         "hidden_buttons": HIDDEN_BUTTONS,
         "stats": stats,
         "sounds_available": sorted(os.listdir(SOUND_DIRECTORY)) if os.path.exists(SOUND_DIRECTORY) else []
-    })
+    }
+
+
+@app.route('/api/status', methods=['GET'])
+def api_status():
+    return jsonify(status_snapshot())
 
 
 def _clamp_pct(value, fallback):
@@ -951,6 +1023,10 @@ if __name__ == '__main__':
                  f"obs³uga znowu restartowa³a komputer, problem z cisz¹ trwa")
     threading.Thread(target=heartbeat_loop, daemon=True).start()
     threading.Thread(target=background_mute_loop, daemon=True).start()
+
+    if REPORT_URL:
+        threading.Thread(target=report_loop, daemon=True).start()
+        print(f"📨 Raport na serwer co {REPORT_EVERY_MIN} min ({REPORT_URL})")
 
     # Start auto-updater w tle
     if UPDATE_ENABLED and UPDATE_URL:

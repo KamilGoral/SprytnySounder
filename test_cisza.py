@@ -61,7 +61,19 @@ def demo():
         assert not zla["ok"], "UTC musi byc zgloszone jako zla strefa"
         assert "UWAGA" in clock_summary(zla)
 
-    print("OK - cisza nocna 22:00-05:30 (takze po polnocy) i kontrola zegara dzialaja")
+    # --- Okno, ktore naprawde boli na sklepie ---
+    # Obsluga wlacza komputer ~05:01 (log Bielskiej, 27 dni). Jesli cisza siega
+    # dalej, sklep dostaje pol godziny martwego systemu i zglasza "rano nie gra".
+    import json
+    cfg = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                      "config.defaults.json"), encoding="utf-8"))
+    od = hm_to_minutes(cfg["quiet_from"], 22 * 60)
+    do = hm_to_minutes(cfg["quiet_to"], 5 * 60)
+    assert not in_quiet_hours(5 * 60 + 1, od, do), \
+        f"o 05:01 sklep jest juz na nogach, a cisza trwa do {cfg['quiet_to']}"
+    assert in_quiet_hours(3 * 60, od, do), "o 3:00 ma byc cicho"
+
+    print("OK - cisza nocna (takze po polnocy), kontrola zegara i okno ranne dzialaja")
 
 
 if __name__ == "__main__":

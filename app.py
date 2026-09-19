@@ -269,13 +269,17 @@ def audio_summary(info=None):
     return ", ".join(parts) if parts else "audio: brak danych"
 
 
-def count_log_starts(hours):
-    """Ile razy aplikacja startowa³a w ostatnich N godzinach (z log.txt).
-    Ka¿dy w³¹cz/wy³¹cz komputera przez obs³ugê = jeden START, wiêc to nasz licznik
-    zg³oszeñ 'znowu nie gra³o'."""
+def count_log_starts(hours=None, od=None):
+    """Ile razy aplikacja startowa³a: w oknie `hours` wstecz albo od chwili `od`.
+
+    MONIT musi liczyæ od PÓ£NOCY, nie w oknie 24 h. Sklepy w³¹czaj¹ komputer
+    codziennie o tej samej porze (Bielska 05:01), wiêc wczorajszy START mieœci³
+    siê w oknie 24 h z zapasem kilkunastu sekund i alarm „obs³uga znowu
+    restartowa³a" wyskakiwa³ co rano na zdrowym sklepie. 27 dni fa³szywych
+    MONITów w logu Bielskiej."""
     if not os.path.exists(LOG_FILE):
         return 0
-    limit = datetime.now() - timedelta(hours=hours)
+    limit = od if od is not None else datetime.now() - timedelta(hours=hours)
     count = 0
     try:
         with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
@@ -1015,11 +1019,12 @@ if __name__ == '__main__':
     # SprawdŸ dzieñ handlowy
     check_trade_day()
     # Œlad w log.txt: po czym poznaæ, ¿e sklep restartowa³ maszynê i o której
-    starts_24h = count_log_starts(24)  # liczone PRZED dopisaniem naszego STARTU
+    polnoc = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    starts_dzis = count_log_starts(od=polnoc)  # liczone PRZED dopisaniem naszego STARTU
     log_line(f"START {STORE_NAME} v{VERSION} — cisza nocna {QUIET_FROM}-{QUIET_TO}, "
              f"{clock_summary()}, stan: {mute_reason() or 'gra'}, {audio_summary()}")
-    if starts_24h >= 1:
-        log_line(f"MONIT: to ju¿ {starts_24h + 1}. uruchomienie w ci¹gu doby — "
+    if starts_dzis >= 1:
+        log_line(f"MONIT: to ju¿ {starts_dzis + 1}. uruchomienie DZISIAJ — "
                  f"obs³uga znowu restartowa³a komputer, problem z cisz¹ trwa")
     threading.Thread(target=heartbeat_loop, daemon=True).start()
     threading.Thread(target=background_mute_loop, daemon=True).start()

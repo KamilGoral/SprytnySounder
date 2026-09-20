@@ -127,6 +127,9 @@ REPORT_URL = str(config.get("report_url", "")).rstrip("/")
 REPORT_EVERY_MIN = int(config.get("report_interval_minutes", 60))
 REPORT_LINES = int(config.get("report_lines", 2000))
 
+# Proces, ktory gra radio na sali (przegladarka z internetowa stacja).
+RADIO_PROCESS = str(config.get("radio_process", "chrome.exe"))
+
 # Głośność (sterowane z panelu /admin, zapisywane do lokalnego config.json)
 ANNOUNCEMENT_VOLUME = int(config.get("announcement_volume", 100))  # głośność komunikatu (%)
 DUCK_VOLUME = int(config.get("duck_volume", 5))                    # tło PODCZAS komunikatu (%)
@@ -251,6 +254,23 @@ def audio_snapshot(with_device_name=True):
     return info
 
 
+def radio_running():
+    """Czy proces radia w ogóle ¿yje. Sesja audio znika ju¿ wtedy, gdy karta
+    przestanie graæ, wiêc sam `sesji: 0` NIE odró¿nia „przegl¹darka pad³a" od
+    „przegl¹darka ¿yje, ale radio stoi" — a to dwa ró¿ne lekarstwa.
+    Zwraca None, gdy nie da siê sprawdziæ (nie-Windows, b³¹d) — diagnostyka
+    nigdy nie mo¿e wywaliæ odtwarzania."""
+    if os.name != "nt" or not RADIO_PROCESS:
+        return None
+    try:
+        wynik = subprocess.run(["tasklist", "/FI", "IMAGENAME eq " + RADIO_PROCESS, "/NH"],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               universal_newlines=True, timeout=10)
+        return RADIO_PROCESS.lower() in (wynik.stdout or "").lower()
+    except Exception:
+        return None
+
+
 def audio_summary(info=None):
     """Jedno zdanie do log.txt — po nim widaæ, czy w nocy zmieni³o siê wyjœcie audio."""
     i = audio_snapshot() if info is None else info
@@ -266,6 +286,9 @@ def audio_summary(info=None):
         parts.append("sesje: " + ", ".join(i["session_list"]))
     elif i.get("sessions") is not None:
         parts.append(f"sesji: {i['sessions']}")
+    zyje = radio_running()
+    if zyje is not None:
+        parts.append(f"{RADIO_PROCESS}: {'dzia³a' if zyje else 'NIE DZIA£A'}")
     return ", ".join(parts) if parts else "audio: brak danych"
 
 
@@ -795,6 +818,8 @@ def status_snapshot():
         "quiet_to": QUIET_TO,
         "clock": clock_info(),          # z³a strefa = cisza o z³ej godzinie
         "audio": audio_snapshot(),      # domyœlne wyjœcie + master (aplikacja rusza tylko sesje)
+        "radio_process": RADIO_PROCESS,
+        "radio_running": radio_running(),   # None = nie da³o siê sprawdziæ
         "restarts_24h": count_log_starts(24),
         "restarts_7d": count_log_starts(24 * 7),
         "sunday_inverted": SUNDAY_INVERTED,

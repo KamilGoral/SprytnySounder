@@ -5,7 +5,7 @@
   "stats_file": "statystyka.txt",
   "template_folder": "templates",
   "static_folder": "static",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "update_enabled": true,
   "update_url": "https://github.com/KamilGoral/SprytnySounder",
   "update_check_interval_hours": 24,
@@ -19,5 +19,6 @@
   "manual_mute": false,
   "report_url": "https://sprytnypcmarket.pl/sounder",
   "report_interval_minutes": 60,
-  "report_lines": 2000
+  "report_lines": 2000,
+  "radio_process": "chrome.exe"
 }

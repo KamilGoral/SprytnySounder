@@ -254,21 +254,44 @@ def audio_snapshot(with_device_name=True):
     return info
 
 
-def radio_running():
-    """Czy proces radia w ogóle ¿yje. Sesja audio znika ju¿ wtedy, gdy karta
-    przestanie graæ, wiêc sam `sesji: 0` NIE odró¿nia „przegl¹darka pad³a" od
-    „przegl¹darka ¿yje, ale radio stoi" — a to dwa ró¿ne lekarstwa.
-    Zwraca None, gdy nie da siê sprawdziæ (nie-Windows, b³¹d) — diagnostyka
-    nigdy nie mo¿e wywaliæ odtwarzania."""
+def sesja_radia(sesje=None):
+    """Czy któraś sesja audio należy do procesu radia. To dowód z WASAPI, że proces
+    nie tylko istnieje, ale trzyma strumień — mocniejszy niż sama lista procesów."""
+    if not sesje or not RADIO_PROCESS:
+        return False
+    cel = RADIO_PROCESS.lower()
+    return any(str(s).split(" ")[0].lower() == cel for s in sesje)
+
+
+def proces_radia():
+    """tasklist: (True/False/None, surowa odpowiedź). Surową odpowiedź wożę dalej,
+    bo na Kilińskiego 21.09 tasklist mówił „nie ma", a sesja chrome.exe 25% była —
+    bez tego cytatu nie da się ustalić, czy tasklist jest ślepy, czy Chrome naprawdę
+    zniknął. None = nie dało się sprawdzić (nie-Windows, brak tasklist)."""
+    if os.name != "nt" or not RADIO_PROCESS:
+        return None, ""
+    try:
+        wynik = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq " + RADIO_PROCESS, "/NH", "/FO", "CSV"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True, errors="replace", timeout=10)
+        surowe = ((wynik.stdout or "") + (wynik.stderr or "")).strip()
+        return RADIO_PROCESS.lower() in surowe.lower(), surowe
+    except Exception as e:
+        return None, f"tasklist: {e}"
+
+
+def radio_running(sesje=None):
+    """Czy radio gra. Sesja audio WYGRYWA z tasklist: jeśli jest, proces żyje i ma
+    strumień. tasklist bywał ślepy (Kilińskiego: sesja chrome.exe 25% i „NIE DZIAŁA").
+    Zwraca None, gdy nie da się sprawdzić — diagnostyka nigdy nie może wywalić
+    odtwarzania."""
     if os.name != "nt" or not RADIO_PROCESS:
         return None
-    try:
-        wynik = subprocess.run(["tasklist", "/FI", "IMAGENAME eq " + RADIO_PROCESS, "/NH"],
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               universal_newlines=True, timeout=10)
-        return RADIO_PROCESS.lower() in (wynik.stdout or "").lower()
-    except Exception:
-        return None
+    if sesja_radia(sesje):
+        return True
+    zyje, _ = proces_radia()
+    return zyje
 
 
 def audio_summary(info=None):
@@ -286,9 +309,18 @@ def audio_summary(info=None):
         parts.append("sesje: " + ", ".join(i["session_list"]))
     elif i.get("sessions") is not None:
         parts.append(f"sesji: {i['sessions']}")
-    zyje = radio_running()
-    if zyje is not None:
-        parts.append(f"{RADIO_PROCESS}: {'dzia³a' if zyje else 'NIE DZIA£A'}")
+    # Trzy stany, nie dwa: „proces jest, karta stoi" to inne lekarstwo niż
+    # „procesu w ogóle nie ma" (patrz 1.7.4 — sprzeczność tasklist z sesją).
+    jest_sesja = sesja_radia(i.get("session_list"))
+    zyje, surowe = proces_radia()
+    if jest_sesja:
+        parts.append(f"{RADIO_PROCESS}: działa (sesja audio)")
+    elif zyje:
+        parts.append(f"{RADIO_PROCESS}: proces jest, brak sesji audio")
+    elif zyje is False:
+        parts.append(f"{RADIO_PROCESS}: NIE DZIAŁA")
+    if jest_sesja and zyje is False:
+        parts.append("SPRZECZNOŚĆ z tasklist: " + " ".join(surowe.split())[:160])
     return ", ".join(parts) if parts else "audio: brak danych"
 
 
@@ -796,6 +828,7 @@ def status_snapshot():
     """Pe³ny stan sklepu. Jedno Ÿród³o prawdy — /api/status i raport wysy³any na
     serwer musz¹ pokazywaæ dok³adnie to samo, inaczej diagnoza zdalna k³amie."""
     trade_info = check_trade_day()
+    audio = audio_snapshot()
 
     # Statystyki
     stats = {}
@@ -817,9 +850,9 @@ def status_snapshot():
         "quiet_from": QUIET_FROM,
         "quiet_to": QUIET_TO,
         "clock": clock_info(),          # z³a strefa = cisza o z³ej godzinie
-        "audio": audio_snapshot(),      # domyœlne wyjœcie + master (aplikacja rusza tylko sesje)
+        "audio": audio,                 # domyœlne wyjœcie + master (aplikacja rusza tylko sesje)
         "radio_process": RADIO_PROCESS,
-        "radio_running": radio_running(),   # None = nie da³o siê sprawdziæ
+        "radio_running": radio_running(audio.get("session_list")),   # None = nie da³o siê sprawdziæ
         "restarts_24h": count_log_starts(24),
         "restarts_7d": count_log_starts(24 * 7),
         "sunday_inverted": SUNDAY_INVERTED,

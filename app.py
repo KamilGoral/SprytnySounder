@@ -129,6 +129,13 @@ REPORT_LINES = int(config.get("report_lines", 2000))
 
 # Proces, ktory gra radio na sali (przegladarka z internetowa stacja).
 RADIO_PROCESS = str(config.get("radio_process", "chrome.exe"))
+# Kilińskiego: obsługa zamyka Chrome z radiem przy wyjściu (~22:00), a rano radio
+# wraca dopiero po ręcznym restarcie komputera. Aplikacja podnosi je sama od
+# RADIO_AUTOSTART_FROM do początku ciszy nocnej. Bez radio_url Chrome przywraca
+# ostatnie karty — adres stacji znamy tylko z tytułu okna w logu.
+RADIO_AUTOSTART = bool(config.get("radio_autostart", True))
+RADIO_AUTOSTART_FROM = str(config.get("radio_autostart_from", "04:00"))
+RADIO_URL = str(config.get("radio_url", ""))
 
 # Głośność (sterowane z panelu /admin, zapisywane do lokalnego config.json)
 ANNOUNCEMENT_VOLUME = int(config.get("announcement_volume", 100))  # głośność komunikatu (%)
@@ -303,6 +310,114 @@ def radio_running(sesje=None):
         return True
     zyje, _ = proces_radia()
     return zyje
+
+
+def idle_seconds():
+    """Ile sekund nikt nie ruszał myszą ani klawiaturą. Po tym widać, czy Chrome
+    zamknął człowiek przy komputerze, czy zniknął sam. None = nie wiem."""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+
+        class LastInput(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+
+        li = LastInput()
+        li.cbSize = ctypes.sizeof(LastInput)
+        if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(li)):
+            return None
+        return ((ctypes.windll.kernel32.GetTickCount() - li.dwTime) & 0xFFFFFFFF) // 1000
+    except Exception:
+        return None
+
+
+def tytuly_okien_radia():
+    """Tytuły okien procesu radia (tasklist /V) — jedyny ślad, jaką stację grają."""
+    if os.name != "nt" or not RADIO_PROCESS:
+        return []
+    try:
+        wynik = subprocess.run(
+            ["tasklist", "/V", "/FI", "IMAGENAME eq " + RADIO_PROCESS, "/NH", "/FO", "CSV"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True, errors="replace", timeout=15)
+        tytuly = []
+        for wiersz in (wynik.stdout or "").splitlines():
+            pola = [x.strip('"') for x in wiersz.split('","')]
+            if len(pola) >= 9 and pola[-1] not in ("N/A", "", "OleMainThreadWndName"):
+                tytuly.append(pola[-1])
+        return tytuly
+    except Exception:
+        return []
+
+
+def uruchom_radio():
+    """Otwiera Chrome z radiem: adres z konfiguracji albo ostatnie karty.
+    autoplay bez kliknięcia — inaczej karta wstaje, ale milczy."""
+    cel = [RADIO_URL] if RADIO_URL else ["--restore-last-session"]
+    subprocess.Popen(["cmd", "/c", "start", "", "chrome", *cel,
+                      "--autoplay-policy=no-user-gesture-required"],
+                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+RADIO_PROB_DZIENNIE = 4
+RADIO_ODSTEP_S = 15 * 60
+
+
+def radio_watch_tick(st, teraz, zyje):
+    """Jeden krok pilnowania radia. `st` to stan między krokami (dict).
+    Loguje zniknięcie/powrót procesu i w oknie pracy sam go podnosi."""
+    if zyje is None:
+        return  # nie da się sprawdzić — nic nie zgadujemy
+    if st.get("zyje") and not zyje:
+        idle = idle_seconds()
+        kto = ("" if idle is None else
+               f", bezczynność myszy/klawiatury {idle} s — " +
+               ("ktoś był przy komputerze" if idle < 120 else "nikt nie dotykał, zniknął sam"))
+        log_line(f"Radio: {RADIO_PROCESS} ZNIKNĄŁ między "
+                 f"{st['widziany']:%H:%M:%S} a {teraz:%H:%M:%S}{kto}")
+    if zyje and st.get("zyje") is False:
+        tytuly = tytuly_okien_radia()
+        log_line(f"Radio: {RADIO_PROCESS} wrócił" +
+                 (f", okna: {' | '.join(tytuly)[:200]}" if tytuly else ""))
+    if zyje:
+        st["widziany"] = teraz
+    st["zyje"] = zyje
+
+    minuty = teraz.hour * 60 + teraz.minute
+    w_oknie = hm_to_minutes(RADIO_AUTOSTART_FROM, 4 * 60) <= minuty < QUIET_FROM_MIN
+    if zyje or not RADIO_AUTOSTART or not w_oknie or RADIO_PROCESS.lower() != "chrome.exe":
+        return
+    if teraz < st.get("nie_przed", teraz):
+        return
+    dzien = teraz.date()
+    if st.get("dzien") != dzien:
+        st["dzien"], st["proby"] = dzien, 0
+    if st["proby"] >= RADIO_PROB_DZIENNIE:
+        if st["proby"] == RADIO_PROB_DZIENNIE:
+            log_line(f"Radio: {RADIO_PROB_DZIENNIE} próby dziś bez skutku — nie uruchamiam więcej do jutra")
+            st["proby"] += 1
+        return
+    st["proby"] += 1
+    st["nie_przed"] = teraz + timedelta(seconds=RADIO_ODSTEP_S)
+    log_line(f"Radio: brak {RADIO_PROCESS} — uruchamiam sam (próba {st['proby']}/"
+             f"{RADIO_PROB_DZIENNIE}, {RADIO_URL or 'ostatnie karty'})")
+    try:
+        uruchom_radio()
+    except Exception as e:
+        log_line(f"Radio: nie udało się uruchomić: {e}")
+
+
+def radio_watch_loop():
+    """Co minutę. Pierwsze uruchomienie dopiero 5 min po starcie — rano po
+    restarcie obsługa zwykle sama otwiera radio i nie chcemy dwóch strumieni."""
+    st = {"nie_przed": datetime.now() + timedelta(minutes=5)}
+    while True:
+        try:
+            radio_watch_tick(st, datetime.now(), proces_radia()[0])
+        except Exception as e:
+            log_line(f"BŁĄD pilnowania radia: {e}")
+        time.sleep(60)
 
 
 def audio_summary(info=None):
@@ -1097,6 +1212,7 @@ if __name__ == '__main__':
                  f"obs³uga znowu restartowa³a komputer, problem z cisz¹ trwa")
     threading.Thread(target=heartbeat_loop, daemon=True).start()
     threading.Thread(target=background_mute_loop, daemon=True).start()
+    threading.Thread(target=radio_watch_loop, daemon=True).start()
 
     if REPORT_URL:
         threading.Thread(target=report_loop, daemon=True).start()

@@ -218,20 +218,31 @@ def audio_snapshot(with_device_name=True):
     try:
         pythoncom.CoInitialize()
         speakers = AudioUtilities.GetSpeakers()
+        # pycaw od 2024 oddaje opakowanie AudioDevice (FriendlyName, EndpointVolume),
+        # starsze gołe IMMDevice (GetId, Activate). Na sklepach jeżdżą obie wersje —
+        # Krótka i Sułkowice (nowe pycaw) miały przez to pusty stan audio.
+        nowe_pycaw = hasattr(speakers, "EndpointVolume")
 
         if with_device_name:
             try:
-                device_id = speakers.GetId()
-                for dev in AudioUtilities.GetAllDevices():
-                    if getattr(dev, "id", None) == device_id:
-                        info["device"] = dev.FriendlyName
-                        break
+                if nowe_pycaw:
+                    info["device"] = speakers.FriendlyName
+                else:
+                    device_id = speakers.GetId()
+                    for dev in AudioUtilities.GetAllDevices():
+                        if getattr(dev, "id", None) == device_id:
+                            info["device"] = dev.FriendlyName
+                            break
             except Exception:
                 pass
 
-        if IAudioEndpointVolume is not None:
+        master = None
+        if nowe_pycaw:
+            master = speakers.EndpointVolume
+        elif IAudioEndpointVolume is not None:
             endpoint = speakers.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
             master = endpoint.QueryInterface(IAudioEndpointVolume)
+        if master is not None:
             info["master"] = int(round(master.GetMasterVolumeLevelScalar() * 100))
             info["muted"] = bool(master.GetMute())
 

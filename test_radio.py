@@ -40,6 +40,43 @@ proces_radia = NS["proces_radia"]
 radio_running = NS["radio_running"]
 audio_summary = NS["audio_summary"]
 
+class Master:
+    def GetMasterVolumeLevelScalar(self):
+        return 0.98
+
+    def GetMute(self):
+        return 0
+
+
+class StaryGlosnik:
+    """Gołe IMMDevice ze starego pycaw: GetId + Activate."""
+    def GetId(self):
+        return "dev1"
+
+    def Activate(self, *a):
+        return types.SimpleNamespace(QueryInterface=lambda iface: Master())
+
+
+class NowyGlosnik:
+    """AudioDevice z pycaw 2024+: nie ma Activate ani GetId."""
+    FriendlyName = "CABLE Input"
+    EndpointVolume = Master()
+
+
+def audio_snapshot_z(glosnik):
+    sesja = types.SimpleNamespace(
+        Process=types.SimpleNamespace(name=lambda: "chrome.exe"),
+        SimpleAudioVolume=types.SimpleNamespace(GetMasterVolume=lambda: 0.25))
+    au = types.SimpleNamespace(
+        GetSpeakers=lambda: glosnik,
+        GetAllDevices=lambda: [types.SimpleNamespace(id="dev1", FriendlyName="CABLE Input")],
+        GetAllSessions=lambda: [sesja])
+    ns = {"AudioUtilities": au, "pythoncom": types.SimpleNamespace(CoInitialize=lambda: None),
+          "IAudioEndpointVolume": types.SimpleNamespace(_iid_=None), "CLSCTX_ALL": 0}
+    exec(compile(wytnij("audio_snapshot"), "app.py", "exec"), ns)
+    return ns["audio_snapshot"]()
+
+
 class Podstawiony:
     """Udaje moduł subprocess: przechwytuje tylko `run`, resztę (PIPE, DEVNULL…)
     przepuszcza do prawdziwego modułu — inaczej atrapa kłamie przy pierwszej zmianie."""
@@ -133,7 +170,16 @@ def main():
     linia = audio_summary(bez_sesji)
     sprawdz("NIE DZIAŁA" in linia, "brak procesu = NIE DZIAŁA")
 
-    # 6. Poza Windows nic nie zgadujemy.
+    # 6. Stan audio przy obu wersjach pycaw (Krótka/Sułkowice: nowe pycaw → pusty stan).
+    for nazwa, glosnik in (("stare pycaw (IMMDevice)", StaryGlosnik()),
+                           ("nowe pycaw (AudioDevice)", NowyGlosnik())):
+        stan = audio_snapshot_z(glosnik)
+        sprawdz(stan.get("error"), nazwa + ": bez błędu", None)
+        sprawdz(stan["master"], nazwa + ": master odczytany", 98)
+        sprawdz(stan["device"], nazwa + ": nazwa wyjścia", "CABLE Input")
+        sprawdz(stan["session_list"], nazwa + ": sesje odczytane", ["chrome.exe 25%"])
+
+    # 7. Poza Windows nic nie zgadujemy.
     NS["os"] = types.SimpleNamespace(name="posix")
     sprawdz(radio_running(["chrome.exe 25%"]), "poza Windows nie wiem", None)
     sprawdz(proces_radia(), "poza Windows bez tasklist", (None, ""))

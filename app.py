@@ -133,7 +133,9 @@ RADIO_PROCESS = str(config.get("radio_process", "chrome.exe"))
 # wraca dopiero po ręcznym restarcie komputera. Aplikacja podnosi je sama od
 # RADIO_AUTOSTART_FROM do początku ciszy nocnej. Bez radio_url Chrome przywraca
 # ostatnie karty — adres stacji znamy tylko z tytułu okna w logu.
-RADIO_AUTOSTART = bool(config.get("radio_autostart", True))
+# Tylko Kilińskiego (locations/kilinskiego.json): pozostałe sklepy gaszą komputer
+# w nocy i wstają o 05:00 razem z odtwarzaczem Pact24, więc nie ma czego podnosić.
+RADIO_AUTOSTART = bool(config.get("radio_autostart", False))
 RADIO_AUTOSTART_FROM = str(config.get("radio_autostart_from", "04:00"))
 RADIO_URL = str(config.get("radio_url", ""))
 
@@ -351,12 +353,53 @@ def tytuly_okien_radia():
         return []
 
 
-def uruchom_radio():
-    """Otwiera Chrome z radiem: adres z konfiguracji albo ostatnie karty.
+AUTOPLAY = "--autoplay-policy=no-user-gesture-required"
+
+
+def glowny_proces(linie):
+    """Z linii poleceń wszystkich chrome.exe wybiera proces główny (bez --type=,
+    to są karty i GPU). Tę linię trzeba powtórzyć, żeby wstał ten sam program."""
+    for l in linie:
+        l = l.strip()
+        if l and "--type=" not in l:
+            return l
+    return ""
+
+
+def polecenie_radia():
+    """Pełna linia poleceń działającego radia. Na sklepach gra SRWare Iron
+    z odtwarzaczem Pact24 (proces też nazywa się chrome.exe), a „start chrome”
+    go nie znajduje — 1.7.5 na Kilińskiego 26-29.09: 4/4 próby bez skutku co noc."""
+    if os.name != "nt" or not RADIO_PROCESS:
+        return ""
+    for cmd in (["wmic", "process", "where", "name='" + RADIO_PROCESS + "'",
+                 "get", "CommandLine", "/format:list"],
+                ["powershell", "-NoProfile", "-Command",
+                 "Get-WmiObject Win32_Process -Filter \"name='" + RADIO_PROCESS +
+                 "'\" | ForEach-Object { 'CommandLine=' + $_.CommandLine }"]):
+        try:
+            wynik = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   universal_newlines=True, errors="replace", timeout=20,
+                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            linie = [l.split("=", 1)[1] for l in (wynik.stdout or "").splitlines()
+                     if l.startswith("CommandLine=")]
+            if glowny_proces(linie):
+                return glowny_proces(linie)
+        except Exception:
+            continue
+    return ""
+
+
+def uruchom_radio(polecenie=""):
+    """Otwiera radio. Najpierw dokładnie to polecenie, które grało (Iron + Pact24),
+    a gdy go nie znamy — Chrome z adresem z konfiguracji albo ostatnimi kartami.
     autoplay bez kliknięcia — inaczej karta wstaje, ale milczy."""
+    if polecenie:
+        subprocess.Popen(polecenie if AUTOPLAY in polecenie else polecenie + " " + AUTOPLAY)
+        return
     cel = [RADIO_URL] if RADIO_URL else ["--restore-last-session"]
     subprocess.Popen(["cmd", "/c", "start", "", "chrome", *cel,
-                      "--autoplay-policy=no-user-gesture-required"],
+                      AUTOPLAY],
                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
@@ -380,6 +423,12 @@ def radio_watch_tick(st, teraz, zyje):
         tytuly = tytuly_okien_radia()
         log_line(f"Radio: {RADIO_PROCESS} wrócił" +
                  (f", okna: {' | '.join(tytuly)[:200]}" if tytuly else ""))
+    if zyje and (st.get("zyje") is not True or not st.get("polecenie")):
+        polecenie = polecenie_radia()
+        if polecenie and polecenie != st.get("polecenie"):
+            program = polecenie[1:].split('"')[0] if polecenie.startswith('"') else polecenie.split(" ")[0]
+            log_line(f"Radio: zapamiętałem program do podnoszenia: {program[:150]}")
+            st["polecenie"] = polecenie
     if zyje:
         st["widziany"] = teraz
     st["zyje"] = zyje
@@ -401,9 +450,10 @@ def radio_watch_tick(st, teraz, zyje):
     st["proby"] += 1
     st["nie_przed"] = teraz + timedelta(seconds=RADIO_ODSTEP_S)
     log_line(f"Radio: brak {RADIO_PROCESS} — uruchamiam sam (próba {st['proby']}/"
-             f"{RADIO_PROB_DZIENNIE}, {RADIO_URL or 'ostatnie karty'})")
+             f"{RADIO_PROB_DZIENNIE}, "
+             f"{'zapamiętany program' if st.get('polecenie') else RADIO_URL or 'ostatnie karty'})")
     try:
-        uruchom_radio()
+        uruchom_radio(st.get("polecenie", ""))
     except Exception as e:
         log_line(f"Radio: nie udało się uruchomić: {e}")
 

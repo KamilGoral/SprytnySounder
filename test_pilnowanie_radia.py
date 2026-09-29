@@ -12,10 +12,13 @@ from datetime import datetime, timedelta
 SRC = open("app.py", encoding="utf-8").read()
 m = re.search(r"^def radio_watch_tick\(.*?(?=^def |\Z)", SRC, re.S | re.M)
 LOG, URUCHOMIENIA = [], []
+IRON = '"C:\\Pact24\\Iron\\chrome.exe" --app=http://player.pact24'
+POLECENIE = [IRON]
 NS = {"datetime": datetime, "timedelta": timedelta,
       "log_line": LOG.append, "idle_seconds": lambda: 30,
       "tytuly_okien_radia": lambda: ["Radio Lewiatan - Google Chrome"],
-      "uruchom_radio": lambda: URUCHOMIENIA.append(1),
+      "uruchom_radio": lambda p="": URUCHOMIENIA.append(p),
+      "polecenie_radia": lambda: POLECENIE[0],
       "hm_to_minutes": lambda hm, d: int(hm[:2]) * 60 + int(hm[3:]),
       "QUIET_FROM_MIN": 22 * 60, "RADIO_PROCESS": "chrome.exe", "RADIO_AUTOSTART": True,
       "RADIO_AUTOSTART_FROM": "04:00", "RADIO_URL": "",
@@ -67,6 +70,30 @@ tick(st, t("06:01"), False)
 sprawdz(URUCHOMIENIA, "5 min po starcie aplikacji czekamy", [])
 tick(st, t("06:05"), None)
 sprawdz(URUCHOMIENIA, "nie wiem = nic nie robię", [])
+
+# 1.7.6: podnosimy dokładnie ten program, który grał (Iron + Pact24), nie „chrome”
+st, URUCHOMIENIA[:], LOG[:] = {}, [], []
+tick(st, t("21:00", 29), True)
+sprawdz(st.get("polecenie"), "zapamiętane polecenie działającego radia", IRON)
+sprawdz(sum("zapamiętałem program" in x and "Iron" in x for x in LOG), "program w logu raz", 1)
+tick(st, t("21:30", 29), True)
+sprawdz(sum("zapamiętałem" in x for x in LOG), "bez ponownego odczytu co minutę", 1)
+tick(st, t("22:05", 29), False)
+tick(st, t("04:00", 30), False)
+sprawdz(URUCHOMIENIA, "04:00 uruchamia zapamiętany program", [IRON])
+sprawdz(any("zapamiętany program" in x for x in LOG), "log mówi, co uruchamia")
+
+POLECENIE[0] = ""
+st, URUCHOMIENIA[:] = {}, []
+tick(st, t("10:00", 29), True)
+tick(st, t("22:05", 29), False)
+tick(st, t("04:00", 30), False)
+sprawdz(URUCHOMIENIA, "nieznane polecenie = stara ścieżka (Chrome)", [""])
+
+M2 = re.search(r"^def glowny_proces\(.*?(?=^def |\Z)", SRC, re.S | re.M)
+exec(compile(M2.group(0), "app.py", "exec"), NS)
+sprawdz(NS["glowny_proces"](['"x\\chrome.exe" --type=renderer', '"x\\chrome.exe" --app=a', ""]),
+        "proces główny = bez --type=", '"x\\chrome.exe" --app=a')
 
 print()
 if BLEDY:

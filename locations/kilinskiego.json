@@ -1,4 +1,5 @@
 {
   "store_name": "Kilińskiego",
-  "sunday_inverted": false
+  "sunday_inverted": false,
+  "radio_autostart": true
 }
